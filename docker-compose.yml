@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_MODEL_ID=${GOOGLE_MODEL_ID}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGO_URI=mongodb://mongodb:27017
+    depends_on:
+      - qdrant
+      - redis
+      - mongodb
+    volumes:
+      - ./src:/app/src
+      - ./app:/app/app
+      - ./weights:/app/weights
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6334:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "6380:6379"
+      - "8001:8001" 
+    volumes:
+      - redis_data:/data
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  local-llm:
+    build: local_llm/
+    ports:
+      - "8081:8081"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+            # Fallback/Alternatives for AMD:
+            # Docker unfortunately doesn't support conditional device mapping cleanly.
+            # We assume host configuration handles GPU visibility or falls back to CPU.
+            # For AMD ROCm usage, typically devices are mapped via:
+            # devices:
+            #   - /dev/kfd
+            #   - /dev/dri
+
+volumes:
+  qdrant_data:
+  redis_data:
+  mongo_data:
+  hf_cache:
