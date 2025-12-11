@@ -22,13 +22,14 @@ The Cascade Context Protocol (CCP) presents a novel neuro-symbolic architecture 
 ## Table of Contents
 
 1. [System Architecture](#system-architecture)
-2. [Neural Components](#neural-components)
-3. [Training Pipeline](#training-pipeline)
-4. [Performance Metrics](#performance-metrics)
-5. [Theoretical Foundations](#theoretical-foundations)
-6. [Installation](#installation)
-7. [Usage](#usage)
-8. [References](#references)
+2. [Chatbot Architecture & Function Calling](#chatbot-architecture--function-calling)
+3. [Neural Components](#neural-components)
+4. [Training Pipeline](#training-pipeline)
+5. [Performance Metrics](#performance-metrics)
+6. [Theoretical Foundations](#theoretical-foundations)
+7. [Installation](#installation)
+8. [Usage](#usage)
+9. [References](#references)
 
 ---
 
@@ -96,6 +97,170 @@ graph LR
 - **Entorhinal Cortex → Context2Vec**: Spatial/semantic encoding and normalization
 - **Prefrontal Cortex → Orchestrator**: Executive control and decision-making
 - **Basal Ganglia → SoftmaxRouter**: Action selection and routing
+
+---
+
+## Chatbot Architecture & Function Calling
+
+### Complete Query Processing Pipeline
+
+The chatbot implements a sophisticated neuro-symbolic pipeline that combines neural routing with function calling for real-time self-supervised learning:
+
+```mermaid
+graph TB
+    Query[User Query] --> Segment[Semantic Chunker<br/>LLM-based Segmentation]
+    Segment --> Blocks[Context Blocks<br/>Granular Units]
+    
+    Blocks --> Embed[Embedding Service<br/>SentenceTransformer]
+    Embed --> C2V[Context2Vec<br/>Vector Normalization]
+    
+    C2V --> Dual{Dual Routing}
+    
+    Dual -->|Neural Path| Router[SoftmaxRouter<br/>Cluster Selection]
+    Dual -->|Memory Path| Memory[Qdrant Search<br/>Similarity Retrieval]
+    
+    Router --> TopK[Top-3 Clusters]
+    TopK --> Graph[Graph Navigation<br/>5-hop Traversal]
+    Graph --> Contexts[Retrieved Contexts]
+    
+    Memory --> Contexts
+    
+    Contexts --> FunctionCall{Function Needed?}
+    FunctionCall -->|Yes| ToolRetrieval[Tool Retrieval<br/>via Context2Vec]
+    FunctionCall -->|No| DirectLLM[Direct LLM]
+    
+    ToolRetrieval --> ToolRouter[SoftmaxRouter<br/>Tool Selection]
+    ToolRouter --> Execute[Execute Function]
+    Execute --> Results[Function Results]
+    
+    Results --> SelfSupervised[Self-Supervised Update<br/>Store in Qdrant]
+    SelfSupervised --> LLM[LLM Generation]
+    DirectLLM --> LLM
+    
+    LLM --> Response[Final Response]
+    
+    style C2V fill:#ff9999
+    style Router fill:#99ccff
+    style ToolRouter fill:#99ccff
+    style SelfSupervised fill:#99ff99
+```
+
+### Function Calling Integration
+
+CCP implements a **dual-routing mechanism** for intelligent function selection:
+
+```mermaid
+graph LR
+    subgraph "Function Calling System"
+        Query2[Function Query] --> Embed2[Embed Query]
+        Embed2 --> Normalize[Context2Vec<br/>Normalization]
+        
+        Normalize --> Route1[Neural Router<br/>SoftmaxRouter]
+        Normalize --> Route2[Memory Search<br/>Qdrant Similarity]
+        
+        Route1 --> Confidence{Confidence<br/>> 0.7?}
+        Confidence -->|Yes| NeuralTool[Neural Tool<br/>Selection]
+        Confidence -->|No| Fallback[Fallback to<br/>Memory]
+        
+        Route2 --> MemoryTool[Memory Tool<br/>Selection]
+        Fallback --> MemoryTool
+        
+        NeuralTool --> Execute2[Execute Function]
+        MemoryTool --> Execute2
+        
+        Execute2 --> Store[Store Result<br/>in Qdrant]
+        Store --> Learn[Update Clusters<br/>Self-Supervised]
+    end
+    
+    style Normalize fill:#ff9999
+    style Route1 fill:#99ccff
+    style Learn fill:#99ff99
+```
+
+**Registered Function Tools** (20 total):
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Data Tools** | `parse_json`, `transform_data` | JSON parsing and data transformation |
+| **ML Tools** | `train_model`, `predict` | Machine learning operations |
+| **Search Tools** | `web_search`, `knowledge_search` | Web and knowledge base search |
+| **Filesystem** | `read_file`, `write_file`, `list_dir` | File operations |
+| **Web Tools** | `fetch_url`, `scrape_page`, `api_call` | Web interactions |
+| **Query Tools** | `sql_query`, `vector_search` | Database queries |
+
+### Real-Time Self-Supervised Learning
+
+CCP implements **continuous learning** through function execution feedback:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Orchestrator
+    participant Context2Vec
+    participant Router
+    participant Function
+    participant Qdrant
+    participant Clusters
+    
+    User->>Orchestrator: Query with tool need
+    Orchestrator->>Context2Vec: Normalize query vector
+    Context2Vec->>Router: Route to tool clusters
+    Router->>Function: Execute selected tool
+    Function->>Function: Perform operation
+    Function-->>Orchestrator: Return results
+    
+    Note over Orchestrator,Qdrant: Self-Supervised Update
+    Orchestrator->>Qdrant: Store (query, tool, result)
+    Qdrant->>Clusters: Update cluster statistics
+    Clusters->>Context2Vec: Refine cluster centers
+    Context2Vec->>Router: Update routing weights
+    
+    Note over Router: Improved for next query
+    
+    Orchestrator-->>User: Response with results
+```
+
+**Self-Supervised Learning Cycle:**
+
+1. **Execution**: User query triggers function call
+2. **Storage**: Query-tool-result triplet stored in Qdrant
+3. **Clustering**: New data point assigned to semantic cluster
+4. **Refinement**: Cluster centers updated via online K-means
+5. **Adaptation**: Context2Vec and Router weights fine-tuned
+6. **Improvement**: Better routing for similar future queries
+
+**Learning Metrics:**
+
+$$
+\text{Cluster Update} = \mathbf{c}_k^{(t+1)} = \alpha \mathbf{c}_k^{(t)} + (1-\alpha) \mathbf{v}_{\text{new}}
+$$
+
+Where:
+- $\mathbf{c}_k^{(t)}$: Cluster center at time $t$
+- $\mathbf{v}_{\text{new}}$: New function execution vector
+- $\alpha = 0.9$: Momentum factor for stability
+
+### Orchestrator: The Central Controller
+
+The Orchestrator implements the **Prefrontal Cortex** analogy, managing:
+
+**Core Responsibilities:**
+1. **Context Segmentation**: Adaptive granularity based on query complexity
+2. **Memory Management**: Short-term and long-term memory coordination
+3. **Neural Routing**: Context2Vec + SoftmaxRouter integration
+4. **Tool Retrieval**: Function calling with dual-routing
+5. **Self-Supervised Learning**: Continuous cluster refinement
+
+**Segmentation Formula:**
+
+$$
+\text{target\_blocks} = (\text{granularity} \times 10) + \left(\frac{\text{context\_remaining}}{\text{avg\_tokens\_per\_block}} \times 0.1\right)
+$$
+
+**Granularity Parameter** ($g \in [0, 1]$):
+- $g = 0.1$: Coarse segmentation (1-2 blocks) - Fast, less precise
+- $g = 0.5$: Balanced segmentation (5-6 blocks) - Optimal for most queries
+- $g = 1.0$: Fine segmentation (10+ blocks) - Slow, highly precise
 
 ---
 
