@@ -24,7 +24,23 @@ Traditional RAG systems use fixed-token chunking (e.g., "500 tokens with 50 over
 ### The CCP Solution: Semantic Boundaries
 CCP utilizes an embedding-based scanning window to detect "Semantic Breaks"—points in the text where the topic shifts significantly.
 
-![Semantic Context Segmentation](assets/semantic_segmentation.svg)
+```mermaid
+flowchart TD
+    Raw["Raw Continuous Text Stream"] --> Embed["Sliding Window Embedding"]
+    Embed --> Cosine{"Cosine Similarity<br/>Drop < Threshold?"}
+    
+    Cosine -->|No| Accumulate["Accumulate Buffer"]
+    Accumulate --> Embed
+    
+    Cosine -->|Yes| Cut["Target Boundary Detected"]
+    Cut --> Block["Create Semantic Context Block"]
+    Block --> Meta["Attach Metadata<br/>(Intent, Source, Timestamp)"]
+    Meta --> Index["Hybrid Indexing"]
+    
+    style Cut fill:#ffccbc,stroke:#ff5722,color:#bf360c
+    style Block fill:#bbdefb,stroke:#2196f3,color:#0d47a1
+    style Index fill:#dcedc8,stroke:#8bc34a,color:#33691e
+```
 
 
 By segmenting data only at natural semantic pauses (e.g., topic transitions), CCP ensures that every retrieved block is a self-contained unit of specific meaning. This allows the LLM to construct an **Infinite Context** mosaic, piecing together perfect informational tiles rather than dealing with broken shards of data [2].
@@ -38,7 +54,25 @@ CCP's architecture for Function Calling and Capability Exposure is directly insp
 ### Cognitive Control Unit & Stored Capability
 The LLM functions as the system's **Control Unit**, fetching "instructions" (Function Tools) and "data" (Knowledge Context) from a unified memory space. By exposing the **Function-Store** and **Knowledge-Base** as retrieval collections, the LLM can "read" its own capabilities just as a CPU reads opcodes from memory.
 
-![Von Neumann Architecture Parallel](assets/von_neumann.svg)
+```mermaid
+flowchart LR
+    subgraph "Von Neumann Architecture"
+        CPU["CPU<br/>(Control Unit + ALU)"]
+        Memory["Unified Memory<br/>(Data + Instructions)"]
+        CPU <-->|Fetch/Execute| Memory
+    end
+    
+    subgraph "CCP Neuro-Symbolic Architecture"
+        LLM["LLM Agent<br/>(Reasoning Core)"]
+        Collections["Unified Collections<br/>(Data Clusters + Function Tools)"]
+        LLM <-->|Retrieve/Call| Collections
+    end
+    
+    style CPU fill:#fff9c4,stroke:#fbc02d,color:#f57f17
+    style LLM fill:#e1bee7,stroke:#8e24aa,color:#4a148c
+    style Memory fill:#f5f5f5,stroke:#9e9e9e,color:#616161
+    style Collections fill:#f5f5f5,stroke:#9e9e9e,color:#616161
+```
 
 
 1.  **Unified Awareness**: Just as the Von Neumann bottleneck is mitigated by unified access, CCP mitigates the "Context Bottleneck" by treating Tools (Instructions) and Information (Data) as retrievable vectors in the same implementation space.
@@ -52,7 +86,37 @@ CCP operates as a neuro-symbolic middleware that intercepts user queries, expand
 
 ### High-Level Data Flow
 
-![CCP High Level Data Flow](assets/data_flow.svg)
+```mermaid
+flowchart TB
+    User["User Query"] --> Orchestrator["Orchestrator"]
+    Orchestrator --> Expansion["Query Expansion"]
+    
+    subgraph "Hybrid Search Engine"
+        Expansion -->|Semantics| VectorSearch["Vector Search<br/>(Qdrant)"]
+        Expansion -->|Keywords| TextSearch["Text Search<br/>(MongoDB)"]
+        
+        VectorSearch --> Fusion["Rank Fusion & Deduplication"]
+        TextSearch --> Fusion
+    end
+    
+    Fusion --> Context["Retrieved Semantic Blocks"]
+    
+    subgraph "Knowledge & Functions"
+        Context --> Knowledge["Knowledge Base"]
+        Context --> Functions["Function Store"]
+    end
+    
+    Orchestrator -->|Augmented Prompt| LLM["LLM Service"]
+    LLM -->|Tool Call| Orchestrator
+    Orchestrator -->|Execute| Tools["Registered Tools"]
+    Tools -->|Result| LLM
+    
+    LLM --> Response["Final Response"]
+    
+    style Expansion fill:#ffccbc,stroke:#ff5722,color:#bf360c
+    style Fusion fill:#bbdefb,stroke:#2196f3,color:#0d47a1
+    style LLM fill:#dcedc8,stroke:#8bc34a,color:#33691e
+```
 
 
 ---
