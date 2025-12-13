@@ -1,6 +1,6 @@
 # Cascade Context Protocol (CCP): A Neuro-Symbolic Architecture for Infinite Context
 
-**Edd C. Ben**  
+**Edd C. Ben**
 *Arkiom Research*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -30,24 +30,25 @@ The first stage of the CCP pipeline is the transformation of unstructured text i
 ```mermaid
 flowchart LR
     %% Data Flow for Segmentation
-    Stream[User Input Stream] --> Scanner{Semantic Scanner}
-    
-    Scanner -->|Regex: 'Step', 'Therefore'| Break[<b>Semantic Break</b>]
-    Scanner -->|Syntax: '\\n\\n'| Break
+    Stream["User Input Stream"] --> Scanner{"Semantic Scanner"}
+  
+    Scanner -->|Regex: Step, Therefore| Break["Semantic Break"]
+    Scanner -->|Syntax: \n\n| Break
     Scanner -->|Token Limit > Max| Break
-    Scanner -->|Else| Buffer[Accumulate Token]
-    
+    Scanner -->|Else| Buffer["Accumulate Token"]
+  
     Buffer -.-> Scanner
-    Break --> Block[<b>ContextBlock</b><br/>Atomic Intent Unit]
-    Block --> Queue[(Processing Queue)]
+    Break --> Block["ContextBlock\n(Atomic Intent Unit)"]
+    Block --> Queue[("Processing Queue")]
 
     classDef proc fill:#e1bee7,stroke:#8e24aa,color:black,stroke-width:2px;
     class Scanner,Break,Buffer proc;
 ```
 
 The segmentation process follows a hierarchical heuristic:
-1.  **Semantic Markers**: The scanner looks for rhetorical indicators of thought transitions.
-2.  **Token Density**: Blocks are constrained by $\theta_{min}$ and $\theta_{max}$ limits.
+
+1. **Semantic Markers**: The scanner looks for rhetorical indicators of thought transitions.
+2. **Token Density**: Blocks are constrained by $\theta_{min}$ and $\theta_{max}$ limits.
 
 $$
 Block_i = f_{seg}(Stream_{input}) \text{ where } \text{Topic}(Block_i) \neq \text{Topic}(Block_{i+1})
@@ -60,13 +61,13 @@ Once segmented, each `ContextBlock` is transmuted into an **ExecutionNode**. The
 ```mermaid
 graph TD
     %% Graph Topology
-    I1(<b>Input Node 1</b><br/>"Analyze Market") --> T1[<b>Tool Node</b><br/>ccp_search(stocks)]
-    I1 --> T2[<b>Tool Node</b><br/>web_search(news)]
-    
-    T1 --> R1(<b>Reasoning Node</b><br/>Synthesis)
+    I1("Input Node 1\nAnalyze Market") --> T1["Tool Node\nccp_search(stocks)"]
+    I1 --> T2["Tool Node\nweb_search(news)"]
+  
+    T1 --> R1("Reasoning Node\nSynthesis")
     T2 --> R1
-    
-    R1 --> O1((<b>Output Node</b><br/>Final Answer))
+  
+    R1 --> O1(("Output Node\nFinal Answer"))
 
     style I1 fill:#9c27b0,stroke:#white,color:white
     style T1 fill:#ff9800,stroke:#white,color:white
@@ -88,10 +89,10 @@ sequenceDiagram
 
     Orch->>DB: Query(Input Context)
     DB-->>Orch: Return [Tool Candidates] (Signatures + Docs)
-    
+  
     Orch->>LLM: Prompt: "Select Tool & Generate Args"
     LLM-->>Orch: JSON { "tool": "search", "args": {...} }
-    
+  
     Orch->>Tool: Execute(args)
     Tool-->>Orch: Return Result
     Orch->>Orch: Append Result to Graph
@@ -103,13 +104,13 @@ The core loop transforms an Input ContextBlock into an Output ContextBlock throu
 
 ```mermaid
 flowchart LR
-    Input[<b>Input Block</b>] --> Retrieve{Context Retrieval}
-    Retrieve -->|Relevant History| Context[Augmented Context]
-    Context --> LLM[LLM Synthesis]
-    LLM --> Output[<b>Output Block</b>]
-    
+    Input["Input Block"] --> Retrieve{"Context Retrieval"}
+    Retrieve -->|Relevant History| Context["Augmented Context"]
+    Context --> LLM["LLM Synthesis"]
+    LLM --> Output["Output Block"]
+  
     Output -.->|Feedback| Retrieve
-    
+  
     style Input fill:#9c27b0,color:white
     style Output fill:#4caf50,color:white
     style LLM fill:#2196f3,color:white
@@ -122,14 +123,16 @@ flowchart LR
 The defining characteristic of CCP is its ability to handle **Infinite Context** without a linear increase in computational cost ($O(1)$ vs $O(N^2)$).
 
 ### The Sliding Window Paradox
+
 Traditional LLMs require the *entire* conversation history to be present in the context window to maintain coherence. Euclidean geometry dictates that as history $H \to \infty$, Cost $C \to \infty$.
 
 ### The Graph Solution
+
 CCP solves this by decoupling **Logical Context** from **Immediate Context**.
 
-1.  **Graph State as Global Memory**: The entire history is stored as a Directed Acyclic Graph (DAG) in the Vector Database. This is the "Long-Term Memory."
-2.  **Localized Processing**: When processing Block $B_t$, the system only retrieves the *top-k* most relevant nodes from the Graph based on semantic similarity, not chronological order.
-3.  **Parallelism**: Because $B_t$ and $B_{t+1}$ are segmented by intent, they can theoretically be processed in parallel by separate LLM instances, with their results merged via graph convergence.
+1. **Graph State as Global Memory**: The entire history is stored as a Directed Acyclic Graph (DAG) in the Vector Database. This is the "Long-Term Memory."
+2. **Localized Processing**: When processing Block $B_t$, the system only retrieves the *top-k* most relevant nodes from the Graph based on semantic similarity, not chronological order.
+3. **Parallelism**: Because $B_t$ and $B_{t+1}$ are segmented by intent, they can theoretically be processed in parallel by separate LLM instances, with their results merged via graph convergence.
 
 $$
 Context(LLM_t) = B_t + \sum_{k=0}^{K} Sim(B_t, Graph_{history})
@@ -139,48 +142,48 @@ This ensures that the LLM's context window usage remains constant ($K \times Blo
 
 ---
 
-## 4. Architecture & Data Flow
+## 5. Architecture & Data Flow
 
 The following diagram illustrates the transformation of a User Request into an internal Graph State and back to the Client.
 
 ```mermaid
 flowchart TB
     %% Definitions
-    User([User Request])
-    Chunker[<b>Semantic Segmenter</b><br/>Input Stream Analysis]
-    
+    User(["User Request"])
+    Chunker["Semantic Segmenter\nInput Stream Analysis"]
+  
     subgraph "Cognitive Core"
         direction TB
-        Orch{Orchestrator}
-        Graph[<b>Execution Graph</b><br/>(Dynamic DAG)]
+        Orch{"Orchestrator"}
+        Graph["Execution Graph\n(Dynamic DAG)"]
     end
-    
+  
     subgraph "Neural-Symbolic Loop"
-        Retrieve[<b>Hybrid Retrieval</b><br/>Vector + Regex]
-        ArgGen[<b>Argument Generator</b><br/>LLM Decoding]
-        ToolExec[<b>Tool Execution</b><br/>Sandbox]
+        Retrieve["Hybrid Retrieval\nVector + Regex"]
+        ArgGen["Argument Generator\nLLM Decoding"]
+        ToolExec["Tool Execution\nSandbox"]
     end
-    
-    Output([ContextBlock Stream])
+  
+    Output(["ContextBlock Stream"])
 
     %% Flow
     User -->|Raw Text| Chunker
     Chunker -->|Intent Segments| Orch
     Orch -->|Spawn Node| Graph
-    
+  
     Graph -->|Context Query| Retrieve
     Retrieve -->|Tool Selected| ArgGen
     ArgGen -->|JSON Args| ToolExec
     ToolExec -->|Result Edge| Graph
-    
+  
     Graph -->|Synthesized Response| Output
-    
+  
     %% Styling
     classDef input fill:#9c27b0,stroke:#6a1b9a,color:white;
     classDef logic fill:#607d8b,stroke:#455a64,color:white;
     classDef loop fill:#ff9800,stroke:#ef6c00,color:white;
     classDef out fill:#4caf50,stroke:#2e7d32,color:white;
-    
+  
     class User,Chunker input;
     class Orch,Graph logic;
     class Retrieve,ArgGen,ToolExec loop;
@@ -192,9 +195,11 @@ flowchart TB
 ## 5. Launch Instructions
 
 ### Prerequisites
-*   **Docker** & **Docker Compose**
+
+* **Docker** & **Docker Compose**
 
 ### Quick Start
+
 Initialize the entire neuro-symbolic stack (Backend, Vector DB, Dashboard):
 
 ```bash
@@ -202,18 +207,20 @@ docker-compose up --build
 ```
 
 **Access Points:**
-*   **Live fMRI Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
-*   **API Endpoint**: [http://localhost:8000](http://localhost:8000)
+
+* **Live fMRI Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
+* **API Endpoint**: [http://localhost:8000](http://localhost:8000)
 
 ### Scientific Verification (The Dashboard)
+
 To verify the system's agency, access the **Live Dashboard**. This interface is not a chat app; it is a visualization of the `ExecutionGraph`.
 
-1.  **Submit a complex query**: *"Research the history of Transformers and summarize the key papers."*
-2.  **Observe**:
-    *   **Segmentation**: The input splits into "Research history" and "Summarize papers".
-    *   **Branching**: The system spawns multiple `ccp_search` nodes.
-    *   **Convergence**: The separate streams merge into a final `Output Node`.
-    *   **Physics**: The nodes repel and cluster organically, visualizing the "shape" of the thought process.
+1. **Submit a complex query**: *"Research the history of Transformers and summarize the key papers."*
+2. **Observe**:
+   * **Segmentation**: The input splits into "Research history" and "Summarize papers".
+   * **Branching**: The system spawns multiple `ccp_search` nodes.
+   * **Convergence**: The separate streams merge into a final `Output Node`.
+   * **Physics**: The nodes repel and cluster organically, visualizing the "shape" of the thought process.
 
 ---
 
@@ -233,24 +240,25 @@ To verify the system's agency, access the **Live Dashboard**. This interface is 
 **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**
 
 ### Research & Non-Commercial Use
+
 You are free to:
-*   **Share** — copy and redistribute the material in any medium or format.
-*   **Adapt** — remix, transform, and build upon the material.
+
+* **Share** — copy and redistribute the material in any medium or format.
+* **Adapt** — remix, transform, and build upon the material.
 
 **Under the following terms:**
-*   **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
-*   **Non-Commercial** — You may not use the material for commercial purposes (profit-generation, commercial product integration, etc.).
+
+* **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+* **Non-Commercial** — You may not use the material for commercial purposes (profit-generation, commercial product integration, etc.).
 
 ### Commercial Usage
+
 If you wish to use the **Cascade Context Protocol** for commercial purposes, including but not limited to:
-*   Integrating CCP into a paid software service (SaaS).
-*   Using CCP for proprietary enterprise tools.
-*   Selling products derived from this architecture.
+
+* Integrating CCP into a paid software service (SaaS).
+* Using CCP for proprietary enterprise tools.
+* Selling products derived from this architecture.
 
 **You MUST obtain a Commercial License.**
-
-Please contact **Edd C. Ben** (Arkiom Research) to negotiate a license agreement.
-
----
 
 [View Full License](LICENSE)
