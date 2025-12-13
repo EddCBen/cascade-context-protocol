@@ -1,6 +1,6 @@
 # Cascade Context Protocol (CCP): A Neuro-Symbolic Architecture for Infinite Context
 
-**Edd C. Ben**
+**Charaf Eddine BENARAB**
 *Arkiom Research*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
