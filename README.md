@@ -1,6 +1,6 @@
 # Cascade Context Protocol (CCP): A Neuro-Symbolic Architecture for Infinite Context
 
-**Charaf Eddine BENARAB**
+**C Eddine Benarab**
 *Arkiom Research*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -126,19 +126,30 @@ The defining characteristic of CCP is its ability to handle **Infinite Context**
 
 Traditional LLMs require the *entire* conversation history to be present in the context window to maintain coherence. Euclidean geometry dictates that as history $H \to \infty$, Cost $C \to \infty$.
 
-### The Graph Solution
+### The Graph Solution: State Decoupling
 
-CCP solves this by decoupling **Logical Context** from **Immediate Context**.
+CCP solves this by fundamentally **decoupling Logical Context from Immediate Context**.
 
-1. **Graph State as Global Memory**: The entire history is stored as a Directed Acyclic Graph (DAG) in the Vector Database. This is the "Long-Term Memory."
-2. **Localized Processing**: When processing Block $B_t$, the system only retrieves the *top-k* most relevant nodes from the Graph based on semantic similarity, not chronological order.
-3. **Parallelism**: Because $B_t$ and $B_{t+1}$ are segmented by intent, they can theoretically be processed in parallel by separate LLM instances, with their results merged via graph convergence.
+1.  **State Offloading**: Instead of forcing the LLM to hold the entire conversation state in its ephemeral VRAM (Context Window), CCP offloads the state to a persistent **Directed Acyclic Graph (DAG)** stored in a Vector Database. The Graph becomes the "Long-Term Memory" (Hippocampus), while the LLM's context window acts solely as "Working Memory" (Prefrontal Cortex).
+2.  **Localized Processing**: When processing Block $B_t$, the system only retrieves the *top-k* most relevant nodes from the Graph. This ensures that the LLM's context usage is constant $O(k)$ regardless of the total conversation length $N$.
+3.  **Why It Matters**: This allows the system to maintain a coherent persona and factual consistency over millions of tokens without suffering from "Lost-in-the-Middle" degradation or quadratic cost explosion.
 
 $$
 Context(LLM_t) = B_t + \sum_{k=0}^{K} Sim(B_t, Graph_{history})
 $$
 
-This ensures that the LLM's context window usage remains constant ($K \times BlockSize$) regardless of how long the conversation becomes, effectively enabling infinite interactions.
+### 4.1 Future Work: Infinite Throughput via Parallelism
+
+While the current implementation processes `ContextBlocks` sequentially for stability, the architecture is designed for **Massive Parallelism**.
+
+Because text is segmented into atomic, self-contained units of intent ($B_1, B_2, ..., B_n$), they can theoretically be processed by $N$ separate LLM instances simultaneously.
+
+**Theoretical Latency Impact:**
+
+*   **Sequential (Current)**: $T_{total} = \sum_{i=1}^{N} T(B_i)$
+*   **Parallel (Future)**: $T_{total} = \max(T(B_i)) + T_{merge}$
+
+This shift would reduce the latency of processing a 100-page document from minutes to seconds, effectively providing **Infinite Throughput** alongside Infinite Context.
 
 ---
 
@@ -228,8 +239,8 @@ To verify the system's agency, access the **Live Dashboard**. This interface is 
 
 ```bibtex
 @software{ccp2025,
-  title={Cascade Context Protocol: A Neuro-Symbolic Architecture},
-  author={Ben, Eddc},
+  title={Cascade Context Protocol (CCP): A Neuro-Symbolic Architecture for Infinite Context},
+  author={Benarab, C Eddine},
   year={2025},
   url={https://github.com/EddCBen/cascade-context-protocol}
 }
@@ -260,5 +271,9 @@ If you wish to use the **Cascade Context Protocol** for commercial purposes, inc
 * Selling products derived from this architecture.
 
 **You MUST obtain a Commercial License.**
+
+Please contact **Charaf Eddine BENARAB** to negotiate a license agreement:
+*   charafeddineben@gmail.com
+*   charafeddineben@arkiom.co
 
 [View Full License](LICENSE)
