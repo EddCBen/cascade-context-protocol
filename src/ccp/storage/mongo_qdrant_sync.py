@@ -89,7 +89,12 @@ class MongoQdrantSyncService:
                             exists = False
                     except Exception as val_err:
                         # Catch Pydantic/Validation errors common with version mismatches
-                        logger.warning(f"[SYNC] Validation error checking {collection_name} (likely version mismatch): {val_err}")
+                        # If it's the known "extra_forbidden" error, just log a short warning
+                        if "extra_forbidden" in str(val_err) or "validation errors" in str(val_err):
+                            logger.warning(f"[SYNC] Qdrant Validation Warning for {collection_name} (ignoring extra fields).")
+                        else:
+                            logger.warning(f"[SYNC] Validation error checking {collection_name}: {val_err}")
+                        
                         logger.info(f"[SYNC] Skipping dimension check for {collection_name} and assuming it's correct.")
                         # We assume it exists and is usable.
                 
@@ -101,7 +106,7 @@ class MongoQdrantSyncService:
                     )
                     logger.info(f"[SYNC] ✅ Created {collection_name}")
                 else:
-                    logger.info(f"[SYNC] ✅ Collection {collection_name} exists (or checked/assumed)")
+                    logger.info(f"[SYNC] ✅ Collection {collection_name} exists (checked/assumed)")
                     
             except Exception as e:
                 logger.error(f"[SYNC] Error initializing {collection_name}: {e}")
@@ -330,9 +335,12 @@ class MongoQdrantSyncService:
         mongo_functions = self.function_metadata.count_documents({})
         try:
             qdrant_functions = self.qdrant.get_collection("function_registry").points_count
-        except:
+        except Exception as e:
             # Fallback estimation or check count via search?
-            logger.warning("[SYNC] Could not verify Qdrant point count due to validation error.")
+            if "validation error" in str(e).lower():
+                logger.warning("[SYNC] Qdrant Validation Warning during count (ignoring).")
+            else:
+                logger.warning(f"[SYNC] Could not verify Qdrant point count: {e}")
             qdrant_functions = "Unknown (Validation Error)"
         
         report["function_registry"] = {

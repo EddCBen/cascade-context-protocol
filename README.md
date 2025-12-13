@@ -1,266 +1,256 @@
-# Cascade Context Protocol (CCP)
-## An LLM Expansion Framework for Infinite Context and Real-Time Capability
+# Cascade Context Protocol (CCP): A Neuro-Symbolic Architecture for Infinite Context
+
+**Edd C. Ben**  
+*Arkiom Research*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Hybrid Search](https://img.shields.io/badge/Search-Hybrid%20Vector%2FText-green.svg)]()
-[![Context](https://img.shields.io/badge/Context-Infinite-purple.svg)]()
+[![Architecture](https://img.shields.io/badge/Architecture-Neuro--Symbolic-purple.svg)]()
 
 ---
 
-## Abstract
+## 1. Abstract
 
-The **Cascade Context Protocol (CCP)** is a sophisticated **LLM Expansion Framework** designed to empower small and mid-sized Language Models (LLMs) with capabilities typically reserved for frontier models. Its primary contribution is the provisioning of an **Infinite Context Window**, achieved through a high-performance **Hybrid Search Engine** that synchronizes Vector and Text retrieval strategies. CCP seamlessly integrates **Function Calling** with a real-time **Knowledge Base**, exposing "Data-Clusters" and "Function-Stores" directly to the LLM, enabling dynamic self-understanding and adaptive problem-solving. Central to this capability is **Semantic Context Segmentation**, a novel method for preserving semantic coherence in retrieved contexts.
-
----
-
-## Semantic Context Segmentation: The Key to Infinite Context
-
-The core innovation of CCP is its approach to handling massive datasets without overwhelming the LLM's limited attention span. We introduce **Semantic Context Segmentation**, a technique that dynamically partitions unstructured data into coherent, meaning-preserving "Semantic Blocks" before they are indexed.
-
-### The Problem with Fixed-Size Chunking
-Traditional RAG systems use fixed-token chunking (e.g., "500 tokens with 50 overlap"). This approach often slices through the middle of thoughts, code blocks, or logical arguments, destroying the **semantic integrity** of the information [1]. When retrieved, these fragmented contexts confuse the LLM, leading to hallucinations.
-
-### The CCP Solution: Semantic Boundaries
-CCP utilizes an embedding-based scanning window to detect "Semantic Breaks"—points in the text where the topic shifts significantly.
-
-```mermaid
-flowchart TD
-    Raw["Raw Continuous Text Stream"] --> Embed["Sliding Window Embedding"]
-    Embed --> Cosine{"Cosine Similarity<br/>Drop < Threshold?"}
-    
-    Cosine -->|No| Accumulate["Accumulate Buffer"]
-    Accumulate --> Embed
-    
-    Cosine -->|Yes| Cut["Target Boundary Detected"]
-    Cut --> Block["Create Semantic Context Block"]
-    Block --> Meta["Attach Metadata<br/>(Intent, Source, Timestamp)"]
-    Meta --> Index["Hybrid Indexing"]
-    
-    style Cut fill:#ffccbc,stroke:#ff5722,color:#bf360c
-    style Block fill:#bbdefb,stroke:#2196f3,color:#0d47a1
-    style Index fill:#dcedc8,stroke:#8bc34a,color:#33691e
-```
-
-
-By segmenting data only at natural semantic pauses (e.g., topic transitions), CCP ensures that every retrieved block is a self-contained unit of specific meaning. This allows the LLM to construct an **Infinite Context** mosaic, piecing together perfect informational tiles rather than dealing with broken shards of data [2].
+The **Cascade Context Protocol (CCP)** proposes a novel architecture for extending the cognitive horizon of Large Language Models (LLMs) beyond the constraints of fixed-length context windows. By treating conversation not as a linear stream of tokens but as a **Directed Acyclic Graph (DAG)** of semantic intent, CCP enables "Infinite Context" through dynamic segmentation and recursive neuro-symbolic retrieval. This paper details the system's core mechanisms: **Semantic Input Segmentation**, the **Execution Graph Topology**, and the **ReAct Cognitive Loop**, demonstrating how they converge to create a transparent, agentic reasoning engine.
 
 ---
 
-## The Von Neumann Parallel: Capability Exposure
+## 2. Introduction: The Linear Bottleneck
 
-CCP's architecture for Function Calling and Capability Exposure is directly inspired by the pioneering **Von Neumann Architecture**, specifically the stored-program concept where instructions and data share a unified address space [4]. In the CCP framework, we extend this analogy to neuro-symbolic cognitive processing.
+Contemporary Transformer architectures are bound by the quadratic complexity of their attention mechanisms, effectively limiting their context window. While "Long Context" models exist, they suffer from the "Lost-in-the-Middle" phenomenon. CCP addresses this by acting as a **middleware**, intercepting user input and decomposing it into atomic units of meaning before they ever reach the LLM. This allows the system to process massive datasets sequentially while maintaining a coherent, evolving global state.
 
-### Cognitive Control Unit & Stored Capability
-The LLM functions as the system's **Control Unit**, fetching "instructions" (Function Tools) and "data" (Knowledge Context) from a unified memory space. By exposing the **Function-Store** and **Knowledge-Base** as retrieval collections, the LLM can "read" its own capabilities just as a CPU reads opcodes from memory.
+---
+
+## 3. Methodology
+
+### 3.1 Semantic Input Segmentation
+
+The first stage of the CCP pipeline is the transformation of unstructured text into structured **ContextBlocks**. Unlike fixed-size chunking strategies that arbitrarily split text every $N$ tokens, CCP employs a **Semantic Segmenter** (`SemanticChunker`) that respects the syntactic and logical boundaries of language.
 
 ```mermaid
 flowchart LR
-    subgraph "Von Neumann Architecture"
-        CPU["CPU<br/>(Control Unit + ALU)"]
-        Memory["Unified Memory<br/>(Data + Instructions)"]
-        CPU <-->|Fetch/Execute| Memory
-    end
+    %% Data Flow for Segmentation
+    Stream[User Input Stream] --> Scanner{Semantic Scanner}
     
-    subgraph "CCP Neuro-Symbolic Architecture"
-        LLM["LLM Agent<br/>(Reasoning Core)"]
-        Collections["Unified Collections<br/>(Data Clusters + Function Tools)"]
-        LLM <-->|Retrieve/Call| Collections
-    end
+    Scanner -->|Regex: 'Step', 'Therefore'| Break[<b>Semantic Break</b>]
+    Scanner -->|Syntax: '\\n\\n'| Break
+    Scanner -->|Token Limit > Max| Break
+    Scanner -->|Else| Buffer[Accumulate Token]
     
-    %% Align subgraphs side-by-side
-    Memory ~~~ LLM
-    
-    style CPU fill:#fff9c4,stroke:#fbc02d,color:#f57f17
-    style LLM fill:#e1bee7,stroke:#8e24aa,color:#4a148c
-    style Memory fill:#f5f5f5,stroke:#9e9e9e,color:#616161
-    style Collections fill:#f5f5f5,stroke:#9e9e9e,color:#616161
+    Buffer -.-> Scanner
+    Break --> Block[<b>ContextBlock</b><br/>Atomic Intent Unit]
+    Block --> Queue[(Processing Queue)]
+
+    classDef proc fill:#e1bee7,stroke:#8e24aa,color:black,stroke-width:2px;
+    class Scanner,Break,Buffer proc;
 ```
 
+The segmentation process follows a hierarchical heuristic:
+1.  **Semantic Markers**: The scanner looks for rhetorical indicators of thought transitions.
+2.  **Token Density**: Blocks are constrained by $\theta_{min}$ and $\theta_{max}$ limits.
 
-1.  **Unified Awareness**: Just as the Von Neumann bottleneck is mitigated by unified access, CCP mitigates the "Context Bottleneck" by treating Tools (Instructions) and Information (Data) as retrievable vectors in the same implementation space.
-2.  **Self-Reflection**: The LLM can query the `Function-Store` to understand *what* it can do, dynamically formulating plans based on available tools—a form of meta-cognitive execution [5].
+$$
+Block_i = f_{seg}(Stream_{input}) \text{ where } \text{Topic}(Block_i) \neq \text{Topic}(Block_{i+1})
+$$
 
----
+### 3.2 The Execution Graph (Topology)
 
-## Infinite Context Architecture: The Scroll of Truth
+Once segmented, each `ContextBlock` is transmuted into an **ExecutionNode**. The Graph allows for non-linear reasoning, where a single input can spawn parallel tool executions.
 
-To achieve a theoretically infinite context window, CCP abandons the traditional "linear history" model in favor of a **Linked Graph Memory** structure, often referred to as the "Scroll of Truth".
+```mermaid
+graph TD
+    %% Graph Topology
+    I1(<b>Input Node 1</b><br/>"Analyze Market") --> T1[<b>Tool Node</b><br/>ccp_search(stocks)]
+    I1 --> T2[<b>Tool Node</b><br/>web_search(news)]
+    
+    T1 --> R1(<b>Reasoning Node</b><br/>Synthesis)
+    T2 --> R1
+    
+    R1 --> O1((<b>Output Node</b><br/>Final Answer))
 
-### Input Segmentation & Sequential Processing
-When a user submits a massive input (e.g., a book or a long report), CCP does not attempt to stuff it into a single prompt. Instead, it employs **Dynamic Input Segmentation**:
+    style I1 fill:#9c27b0,stroke:#white,color:white
+    style T1 fill:#ff9800,stroke:#white,color:white
+    style T2 fill:#ff9800,stroke:#white,color:white
+    style R1 fill:#2196f3,stroke:#white,color:white
+    style O1 fill:#4caf50,stroke:#white,color:white
+```
 
-1.  **Segmentation**: The input is broken into semantic blocks using the `SemanticChunker`.
-2.  **Sequential Loop**: The Orchestrator processes these blocks sequentially.
-3.  **Active Retrieval**: For *each* input block, the system retrieves relevant *past* logic from the Graph (RAG), creating a localized context window that slides through the infinite data stream.
+### 3.3 Neuro-Symbolic Function Calling
+
+CCP exposes a "Glass Box" tool use mechanism. Instead of opaque function calling, the process is fully explicit.
+
+```mermaid
+sequenceDiagram
+    participant Orch as Orchestrator
+    participant DB as Vector DB
+    participant LLM as LLM Agent
+    participant Tool as Tool Sandbox
+
+    Orch->>DB: Query(Input Context)
+    DB-->>Orch: Return [Tool Candidates] (Signatures + Docs)
+    
+    Orch->>LLM: Prompt: "Select Tool & Generate Args"
+    LLM-->>Orch: JSON { "tool": "search", "args": {...} }
+    
+    Orch->>Tool: Execute(args)
+    Tool-->>Orch: Return Result
+    Orch->>Orch: Append Result to Graph
+```
+
+### 3.4 Block Transformation (Input $\to$ Output)
+
+The core loop transforms an Input ContextBlock into an Output ContextBlock through retrieval and synthesis.
 
 ```mermaid
 flowchart LR
-    Input["Massive User Input"] --> Chunker["Semantic Chunker"]
-    Chunker --> Seg1["Segment 1"]
-    Chunker --> Seg2["Segment 2"]
-    Chunker --> Seg3["Segment 3..."]
-
-    subgraph "Sequential Processing Loop"
-        Seg1 --> Ret1["Retrieve Context"]
-        Ret1 --> LLM1["LLM Processing"]
-        LLM1 --> Out1["Output Block 1"]
-        
-        Seg2 --> Ret2["Retrieve Context"]
-        Ret2 --> LLM2["LLM Processing"]
-        LLM2 --> Out2["Output Block 2"]
-        
-        Out1 -.->|Link| Out2
-    end
+    Input[<b>Input Block</b>] --> Retrieve{Context Retrieval}
+    Retrieve -->|Relevant History| Context[Augmented Context]
+    Context --> LLM[LLM Synthesis]
+    LLM --> Output[<b>Output Block</b>]
     
-    style Input fill:#ffccbc,stroke:#bf360c
-    style LLM1 fill:#dcedc8,stroke:#33691e
-    style LLM2 fill:#dcedc8,stroke:#33691e
+    Output -.->|Feedback| Retrieve
+    
+    style Input fill:#9c27b0,color:white
+    style Output fill:#4caf50,color:white
+    style LLM fill:#2196f3,color:white
 ```
-
-This architecture ensures that the "Immediate Context" (what the LLM sees right now) is always small and highly relevant, while the "Logical Context" (the graph it builds upon) is infinite.
 
 ---
 
-## Architecture
+## 4. Theoretical Framework: Infinite Context via Dynamic Graphing
 
-CCP operates as a neuro-symbolic middleware that intercepts user queries, expands them via semantic intuition, and retrieves precise context from a synchronized multi-modal memory system before invoking the LLM.
+The defining characteristic of CCP is its ability to handle **Infinite Context** without a linear increase in computational cost ($O(1)$ vs $O(N^2)$).
 
-### High-Level Data Flow
+### The Sliding Window Paradox
+Traditional LLMs require the *entire* conversation history to be present in the context window to maintain coherence. Euclidean geometry dictates that as history $H \to \infty$, Cost $C \to \infty$.
+
+### The Graph Solution
+CCP solves this by decoupling **Logical Context** from **Immediate Context**.
+
+1.  **Graph State as Global Memory**: The entire history is stored as a Directed Acyclic Graph (DAG) in the Vector Database. This is the "Long-Term Memory."
+2.  **Localized Processing**: When processing Block $B_t$, the system only retrieves the *top-k* most relevant nodes from the Graph based on semantic similarity, not chronological order.
+3.  **Parallelism**: Because $B_t$ and $B_{t+1}$ are segmented by intent, they can theoretically be processed in parallel by separate LLM instances, with their results merged via graph convergence.
+
+$$
+Context(LLM_t) = B_t + \sum_{k=0}^{K} Sim(B_t, Graph_{history})
+$$
+
+This ensures that the LLM's context window usage remains constant ($K \times BlockSize$) regardless of how long the conversation becomes, effectively enabling infinite interactions.
+
+---
+
+## 4. Architecture & Data Flow
+
+The following diagram illustrates the transformation of a User Request into an internal Graph State and back to the Client.
 
 ```mermaid
 flowchart TB
-    User["User Query"] --> Orchestrator["Orchestrator"]
-    Orchestrator --> Expansion["Query Expansion"]
+    %% Definitions
+    User([User Request])
+    Chunker[<b>Semantic Segmenter</b><br/>Input Stream Analysis]
     
-    subgraph "Hybrid Search Engine"
-        Expansion -->|Semantics| VectorSearch["Vector Search<br/>(Qdrant)"]
-        Expansion -->|Keywords| TextSearch["Text Search<br/>(MongoDB)"]
-        
-        VectorSearch --> Fusion["Rank Fusion & Deduplication"]
-        TextSearch --> Fusion
+    subgraph "Cognitive Core"
+        direction TB
+        Orch{Orchestrator}
+        Graph[<b>Execution Graph</b><br/>(Dynamic DAG)]
     end
     
-    Fusion --> Context["Retrieved Semantic Blocks"]
-    
-    subgraph "Knowledge & Functions"
-        Context --> Knowledge["Knowledge Base"]
-        Context --> Functions["Function Store"]
+    subgraph "Neural-Symbolic Loop"
+        Retrieve[<b>Hybrid Retrieval</b><br/>Vector + Regex]
+        ArgGen[<b>Argument Generator</b><br/>LLM Decoding]
+        ToolExec[<b>Tool Execution</b><br/>Sandbox]
     end
     
-    Orchestrator -->|Augmented Prompt| LLM["LLM Service"]
-    LLM -->|Tool Call| Orchestrator
-    Orchestrator -->|Execute| Tools["Registered Tools"]
-    Tools -->|Result| LLM
+    Output([ContextBlock Stream])
+
+    %% Flow
+    User -->|Raw Text| Chunker
+    Chunker -->|Intent Segments| Orch
+    Orch -->|Spawn Node| Graph
     
-    LLM --> Response["Final Response"]
+    Graph -->|Context Query| Retrieve
+    Retrieve -->|Tool Selected| ArgGen
+    ArgGen -->|JSON Args| ToolExec
+    ToolExec -->|Result Edge| Graph
     
-    style Expansion fill:#ffccbc,stroke:#ff5722,color:#bf360c
-    style Fusion fill:#bbdefb,stroke:#2196f3,color:#0d47a1
-    style LLM fill:#dcedc8,stroke:#8bc34a,color:#33691e
+    Graph -->|Synthesized Response| Output
+    
+    %% Styling
+    classDef input fill:#9c27b0,stroke:#6a1b9a,color:white;
+    classDef logic fill:#607d8b,stroke:#455a64,color:white;
+    classDef loop fill:#ff9800,stroke:#ef6c00,color:white;
+    classDef out fill:#4caf50,stroke:#2e7d32,color:white;
+    
+    class User,Chunker input;
+    class Orch,Graph logic;
+    class Retrieve,ArgGen,ToolExec loop;
+    class Output out;
 ```
 
-
 ---
 
-## Hybrid Search Engine
-
-The core of CCP's infinite context is its **Hybrid Search Engine**, which combines the semantic understanding of dense vector embeddings with the precision of varied keyword matching.
-
-### Synchronization
-The search mechanism ensures that **Qdrant** (Vector Store) and **MongoDB** (Document Store) remain synchronized. Search outputs are rigorously cleaned and deduplicated to present a coherent context view to the LLM.
-
-$$
-S_{hybrid}(q) = \alpha \cdot S_{vector}(E(q)) + (1-\alpha) \cdot S_{text}(Expand(q))
-$$
-
-Where:
-- $E(q)$ is the embedding of query $q$.
-- $Expand(q)$ is the expanded keyword set.
-- $\alpha$ is the fusion weight balancing semantic and lexical signals.
-
----
-
-## Repository Structure
-
-The codebase is organized to support modular expansion:
-
-- `src/ccp/core`: Core orchestration and logic.
-- `src/ccp/functions`: Library of tools (Search, File, Web, etc.).
-- `src/ccp/storage`: Interfaces for MongoDB and Qdrant.
-- `scripts/`: Implementation verification, testing, and state management scripts.
-
----
-
-## Installation
+## 5. Launch Instructions
 
 ### Prerequisites
+*   **Docker** & **Docker Compose**
 
-- Python 3.10+
-- Docker & Docker Compose (for Qdrant/MongoDB)
-- CUDA-capable GPU (optional, for local embeddings)
-
-### Setup
+### Quick Start
+Initialize the entire neuro-symbolic stack (Backend, Vector DB, Dashboard):
 
 ```bash
-# Clone repository
-git clone https://github.com/EddCBen/cascade-context-protocol.git
-cd cascade-context-protocol
-
-# Install dependencies
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Start Infrastructure
-docker compose up -d
+docker-compose up --build
 ```
+
+**Access Points:**
+*   **Live fMRI Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
+*   **API Endpoint**: [http://localhost:8000](http://localhost:8000)
+
+### Scientific Verification (The Dashboard)
+To verify the system's agency, access the **Live Dashboard**. This interface is not a chat app; it is a visualization of the `ExecutionGraph`.
+
+1.  **Submit a complex query**: *"Research the history of Transformers and summarize the key papers."*
+2.  **Observe**:
+    *   **Segmentation**: The input splits into "Research history" and "Summarize papers".
+    *   **Branching**: The system spawns multiple `ccp_search` nodes.
+    *   **Convergence**: The separate streams merge into a final `Output Node`.
+    *   **Physics**: The nodes repel and cluster organically, visualizing the "shape" of the thought process.
 
 ---
 
-## Usage
-
-### 1. Verification
-Run the verification script to ensure all components are active:
-
-```bash
-python scripts/verify_implementation.py
-```
-
-### 2. Start the CCP Service
-Start the backend API:
-
-```bash
-uvicorn app.main:app --reload
-```
-
----
-
-## References
-
-1.  **Lewis, P., et al. (2020).** "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks." *NeurIPS*. [Link](https://arxiv.org/abs/2005.11401) - Foundational paper on RAG.
-2.  **Kuratov, Y., et al. (2024).** "In Search of the Long Context: Semantic Chunking for RAG." *arXiv preprint*. - Discusses the impact of semantic boundaries on retrieval quality.
-3.  **Munkhdalai, T., et al. (2024).** "Leave No Context Behind: Efficient Infinite Context Transformers with Infini-Attention." *Google DeepMind*. - Explores memory compression for infinite contexts.
-4.  **Von Neumann, J. (1945).** "First Draft of a Report on the EDVAC." - Foundational paper on the stored-program architecture.
-5.  **Park, J. S., et al. (2023).** "Generative Agents: Interactive Simulacra of Human Behavior." - Discusses memory retrieval and reflection in LLM agents.
-
----
-
-## Citation
-
-If you use CCP in your research, please cite:
+## 6. Citation
 
 ```bibtex
 @software{ccp2025,
-  title={Cascade Context Protocol: An LLM Expansion Framework},
+  title={Cascade Context Protocol: A Neuro-Symbolic Architecture},
   author={Ben, Eddc},
   year={2025},
   url={https://github.com/EddCBen/cascade-context-protocol}
 }
 ```
 
+## 7. License & Commercial Usage
+
+**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**
+
+### Research & Non-Commercial Use
+You are free to:
+*   **Share** — copy and redistribute the material in any medium or format.
+*   **Adapt** — remix, transform, and build upon the material.
+
+**Under the following terms:**
+*   **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+*   **Non-Commercial** — You may not use the material for commercial purposes (profit-generation, commercial product integration, etc.).
+
+### Commercial Usage
+If you wish to use the **Cascade Context Protocol** for commercial purposes, including but not limited to:
+*   Integrating CCP into a paid software service (SaaS).
+*   Using CCP for proprietary enterprise tools.
+*   Selling products derived from this architecture.
+
+**You MUST obtain a Commercial License.**
+
+Please contact **Edd C. Ben** (Arkiom Research) to negotiate a license agreement.
+
 ---
 
-## License
-
-MIT License - see [LICENSE](LICENSE) file for details.
+[View Full License](LICENSE)

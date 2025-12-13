@@ -65,13 +65,28 @@ class Orchestrator:
         except FileNotFoundError:
             return f"Error: Prompt file not found at {segmentation_file}"
 
-    async def retrieve_tools(self, query: str) -> List[Any]:
+    def get_system_prompt(self) -> str:
         """
-        Neuro-Symbolic Tool Retrieval:
+        Reads the standard system prompt.
+        """
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        prompts_dir = os.path.join(base_dir, "prompts")
+        system_file = os.path.join(prompts_dir, "system.txt")
+
+        try:
+            with open(system_file, "r") as f:
+                return f.read()
+        except FileNotFoundError:
+            return "SYSTEM: You are a helpful assistant."
+
+    async def retrieve_tools(self, query: str, threshold: float = 0.75) -> List[Any]:
+        """
+        Neuro-Symbolic Tool Retrieval with Threshold:
         1. Embed Query.
         2. Normalize (Neural).
         3. Search (Qdrant).
-        4. Return Function Objects.
+        4. Filter by Threshold.
+        5. Return Function Objects.
         """
         if not self.llm_service or not self.qdrant:
             return []
@@ -92,7 +107,8 @@ class Orchestrator:
             search_result = self.qdrant.search(
                 collection_name="function_registry",
                 query_vector=normalized_emb,
-                limit=3  # Top-3 tools
+                limit=3,  # Top-3 tools
+                score_threshold=threshold # Filter by similarity
             )
         except Exception as e:
             logger.error(f"Qdrant Search Error: {e}")
@@ -107,10 +123,170 @@ class Orchestrator:
              for hit in search_result:
                  tool_name = hit.payload.get("name")
                  if tool_name and tool_name in all_tools:
-                     logger.info(f"[Orchestrator] Retrieved Tool: {tool_name} (Score: {hit.score:.4f})")
+                     logger.info(f"[Orchestrator] Vector Hit: {tool_name} (Score: {hit.score:.4f})")
                      found_tools.append(all_tools[tool_name])
         
+    async def retrieve_tools(self, query: str, threshold: float = 0.60) -> List[Any]:
+        """
+        Neuro-Symbolic Tool Retrieval with Regex Reinforcement:
+        1. Embed Query.
+        2. Normalize (Neural).
+        3. Search (Qdrant) with Lower Threshold.
+        4. Regex Pattern Matching (Reinforcement).
+        5. Return Union of Tools.
+        """
+        import re
+        
+        if not self.llm_service or not self.qdrant:
+            return []
+
+        # 1. Embed
+        raw_embedding = self.llm_service.get_embedding(query)
+        if not raw_embedding:
+            return []
+        
+        # 2. Use Raw Embedding directly (Standard Vector Search)
+        normalized_emb = raw_embedding
+
+
+        # 3. Search Qdrant
+        try:
+            # Check collection exists
+            # We assume it exists from LLMService init
+            search_result = self.qdrant.search(
+                collection_name="function_registry",
+                query_vector=normalized_emb,
+                limit=3,  # Top-3 tools
+                score_threshold=threshold # Filter by similarity
+            )
+        except Exception as e:
+            logger.error(f"Qdrant Search Error: {e}")
+            return []
+
+        # 4. Map back to functions
+        found_tools = []
+        if self.llm_service and hasattr(self.llm_service, 'registry'):
+             all_tools = self.llm_service.registry.tools # name -> func
+             
+             # Vector Hits
+             for hit in search_result:
+                 tool_name = hit.payload.get("name")
+                 if tool_name and tool_name in all_tools:
+                     logger.info(f"[Orchestrator] Vector Hit: {tool_name} (Score: {hit.score:.4f})")
+                     found_tools.append(all_tools[tool_name])
+             
+             # 5. Regex Reinforcement
+             # Explicit intent detection to guarantee tool selection for specific commands
+             regex_patterns = {
+                 "search_web_advanced": [
+                     r"(?i)\b(search|find|look\sup)\b.*\b(web|online|google|internet)\b",
+                     r"(?i)\b(search|query)\b.*\b(web|internet)\b"
+                 ],
+                 "search_news": [
+                     r"(?i)\b(news|headline|latest)\b",
+                     r"(?i)\b(what|match)\b.*\b(happened|occurring)\b"
+                 ],
+                 "cross_check_fact": [
+                     r"(?i)\b(verify|fact[\s-]?check|true|false|validate)\b"
+                 ],
+                 "ccp_search": [
+                     r"(?i)\b(search|find|query)\b" # Broad catch-all for search if not specific to web
+                 ]
+             }
+             
+             for tool_key, patterns in regex_patterns.items():
+                 # Only check if tool exists
+                 if tool_key in all_tools:
+                     for pattern in patterns:
+                         if re.search(pattern, query):
+                             tool_func = all_tools[tool_key]
+                             if tool_func not in found_tools:
+                                 logger.info(f"[Orchestrator] Regex Reinforcement: {tool_key} (Matched: '{pattern}')")
+                                 found_tools.append(tool_func)
+                             break # Matched this tool, move to next tool
+
         return found_tools
+
+    async def select_tool_and_args(self, candidate_tools: List[Any], context_text: str) -> tuple[Optional[str], dict]:
+        """
+        Presented with a list of candidate tools (from Search), the LLM selects the 
+        most appropriate one (or None) and generates its arguments.
+        """
+        import inspect
+        import json
+
+        tools_desc = []
+        for tool in candidate_tools:
+            tool_name = tool.__name__
+            docstring = inspect.getdoc(tool)
+            sig_obj = inspect.signature(tool)
+            
+            params = []
+            for name, param in sig_obj.parameters.items():
+                type_name = str(param.annotation).replace("typing.", "") if param.annotation != inspect.Parameter.empty else "Any"
+                default_val = f"(default: {param.default})" if param.default != inspect.Parameter.empty else "(REQUIRED)"
+                params.append(f"- {name}: {type_name} {default_val}")
+            
+            tool_desc = f"""
+--- TOOL OPTION: {tool_name} ---
+SIGNATURE: {tool_name}({', '.join([k for k in sig_obj.parameters.keys()])})
+PARAMS:
+{chr(10).join(params)}
+DOCS: {docstring}
+"""
+            tools_desc.append(tool_desc)
+
+        all_tools_str = "\n".join(tools_desc)
+
+        prompt = f"""SYSTEM: You are an autonomous Tool Selector & Argument Generator.
+Task: Analyze the Context Segment and the available Candidate Tools.
+1. Select the SINGLE best tool to solve the problem in the context. If none are relevant, return "None".
+2. If a tool is selected, extract precise arguments from the context.
+
+CANDIDATE TOOLS:
+{all_tools_str}
+
+CONTEXT SEGMENT:
+"{context_text}"
+
+INSTRUCTIONS:
+- If a relevant tool exists, output JSON with "tool_name" and "arguments".
+- If NO tool is relevant, output JSON using "tool_name": "None".
+- Do not hallucinate tools not in the list.
+
+Example Output:
+{{
+  "tool_name": "ccp_search",
+  "arguments": {{ "query": "latest AI trends", "sources": "web" }}
+}}
+
+JSON OUTPUT:"""
+
+        try:
+            # Call LLM
+            resp_stream = self.llm_service.generate_content_stream(prompt)
+            full_resp = ""
+            for token in resp_stream:
+                full_resp += token
+            
+            clean_json = full_resp.strip()
+            if clean_json.startswith("```json"): clean_json = clean_json[7:]
+            if clean_json.startswith("```"): clean_json = clean_json[3:]
+            if clean_json.endswith("```"): clean_json = clean_json[:-3]
+            clean_json = clean_json.strip()
+
+            if not clean_json: return None, {}
+            
+            data = json.loads(clean_json)
+            tool_name = data.get("tool_name")
+            args = data.get("arguments", {})
+            
+            logger.info(f"[Orchestrator] Selected Tool: {tool_name}, Args: {args}")
+            return tool_name, args
+
+        except Exception as e:
+            logger.warning(f"[Orchestrator] Tool Selection Failed: {e}")
+            return "None", {}
 
     async def retrieve_context(self, query: str, limit: int = 3) -> str:
         """
@@ -180,13 +356,23 @@ class Orchestrator:
         except Exception:
             pass
 
-        # 2. Input Segmentation (The "Infinite Input" Logic)
+        # 2. Input Segmentation (Context-Aware)
         from src.ccp.core.semantic_chunker import SemanticChunker
-        chunker = SemanticChunker(chunk_mode="semantic", max_chunk_size=512)
+        from src.ccp.core.settings import settings
         
-        # Breakdown user input into manageable blocks
-        input_blocks = chunker.chunk_text(message)
-        logger.info(f"[{session_id}] Input Segmented into {len(input_blocks)} blocks")
+        # Determine if segmentation is needed based on Context Window
+        # We leave ~25% buffer for system prompts and reasoning
+        context_limit = int(settings.context_window_size * 0.75)
+        input_tokens = len(message.split()) # Rough estimate
+        
+        chunker = SemanticChunker(chunk_mode="semantic", max_chunk_size=context_limit)
+        
+        if input_tokens < context_limit:
+            input_blocks = [message]
+            logger.info(f"[{session_id}] Message ({input_tokens} tokens) fits in context ({context_limit}). Skipping segmentation.")
+        else:
+            input_blocks = chunker.chunk_text(message)
+            logger.info(f"[{session_id}] Message ({input_tokens} tokens) exceeds context ({context_limit}). Segmented into {len(input_blocks)} blocks.")
 
         # Track previous node for linking
         previous_node_id = "start"
@@ -201,8 +387,8 @@ class Orchestrator:
                 id=input_node_id,
                 label=f"Input Chunk {i+1}",
                 type="input_segment",
-                position={"x": 250, "y": 100 + (i * 300)}, # Offset y
-                data={"content": input_block_text}
+                # position={"x": 250, "y": 100 + (i * 300)}, # REMOVED COORDS
+                data={"content": input_block_text[:50]+"..."}
             )
             graph.nodes.append(input_node)
             graph.edges.append(ExecutionEdge(
@@ -218,37 +404,88 @@ class Orchestrator:
                 content="", type="graph_update", metadata={"graph": graph.model_dump()}, execution_graph_id=graph.id
             ).model_dump_json() + "\n"
 
-            # --- B. Context Retrieval (Per Block) ---
-            retrieved_context = await self.retrieve_context(input_block_text)
-            
-            # --- C. Tool Retrieval (Per Block) ---
-            retrieved_tools = await self.retrieve_tools(input_block_text)
+            # --- B. Context/Tool Retrieval (Per Block) ---
+            # 1. Retrieve Optimal Tool (Neural Decision with Threshold)
+            retrieved_tools = await self.retrieve_tools(input_block_text, threshold=0.75)
             tool_names = [t.__name__ for t in retrieved_tools]
             
-            # Retrieval Node Visualization
-            retrieval_node_id = f"retrieval_{i+1}"
-            retrieval_node = ExecutionNode(
-                id=retrieval_node_id,
-                label=f"Neural Retrieval {i+1}",
-                type="tool",
-                position={"x": 450, "y": 100 + (i * 300)}, # Offset x
-                data={"tools": tool_names, "context_found": len(retrieved_context) > 0}
+            retrieved_context = ""
+            active_tool_name = "None"
+            tool_args_used = {}
+            
+            # 2. Execute Tool (if any)
+            # 2. Execute Tool (if any)
+            if retrieved_tools:
+                # Dynamic Selection: Let LLM choose from retrieved tools + Generate Args
+                try:
+                    active_tool_name, tool_args_used = await self.select_tool_and_args(retrieved_tools, input_block_text)
+                    
+                    if active_tool_name and active_tool_name != "None":
+                        # Find function object
+                        active_tool = next((t for t in retrieved_tools if t.__name__ == active_tool_name), None)
+                        
+                        if active_tool:
+                            logger.info(f"[{session_id}] Executing Selected Tool: {active_tool_name} with args: {tool_args_used}")
+                            
+                            # Execute
+                            if tool_args_used:
+                                tool_result = active_tool(**tool_args_used)
+                            else:
+                                # Fallback: simple call
+                                import inspect
+                                sig = inspect.signature(active_tool)
+                                if "query" in sig.parameters:
+                                    tool_result = active_tool(query=input_block_text)
+                                else:
+                                    tool_result = active_tool(input_block_text)
+                            
+                            retrieved_context = str(tool_result)
+                        else:
+                             logger.warning(f"[{session_id}] Selected tool '{active_tool_name}' not found in candidates.")
+                    else:
+                        logger.info(f"[{session_id}] LLM decided NOT to use any tool.")
+                        
+                except Exception as e:
+                    logger.error(f"Tool Selection/Execution Failed: {e}")
+                    retrieved_context = f"Error executing tool: {e}"
+
+            # Tool Execution Node Visualization
+            tool_node_id = f"tool_exec_{i+1}"
+            tool_node = ExecutionNode(
+                id=tool_node_id,
+                label=f"Tool: {active_tool_name}",
+                type="tool_execution", 
+                data={
+                    "tool_name": active_tool_name,
+                    "input": input_block_text[:100],
+                    "args": tool_args_used,
+                    "output_preview": retrieved_context[:200] if retrieved_context else "No Output/Context",
+                    "output_preview": retrieved_context[:100] if retrieved_context else "No Output/Context",
+                    "tools_available": tool_names,
+                    "context_found": bool(retrieved_context)
+                }
             )
-            graph.nodes.append(retrieval_node)
+            graph.nodes.append(tool_node)
             graph.edges.append(ExecutionEdge(
-                id=f"e_{input_node_id}_to_{retrieval_node_id}",
+                id=f"e_{input_node_id}_to_{tool_node_id}",
                 source=input_node_id,
-                target=retrieval_node_id,
-                label="augments"
+                target=tool_node_id,
+                label="uses_tool"
             ))
+
+            # Emit Graph Update for Tool Node (Crucial for visualization)
+            yield ContextBlock(
+                content="", type="graph_update", metadata={"graph": graph.model_dump()}, execution_graph_id=graph.id
+            ).model_dump_json() + "\n"
             
             # --- D. Dynamic Prompt Construction ---
-            system_instruction = self.get_segmentation_prompt()
+            # Corrected: Use System Prompt (Assistant Persona) instead of Segmentation Prompt
+            system_instruction = self.get_system_prompt()
             full_prompt = f"{system_instruction}\n\n"
             if retrieved_context:
-                full_prompt += f"{retrieved_context}\n"
+                full_prompt += f"TOOL OUTPUT ({active_tool_name}):\n{retrieved_context}\n\n"
             
-            full_prompt += f"CURRENT INPUT SEGMENT:\n{input_block_text}\n"
+            full_prompt += f"USER INPUT:\n{input_block_text}\n"
 
             # --- E. Stream LLM Response ---
             stream = self.llm_service.generate_content_stream(full_prompt)
@@ -259,57 +496,85 @@ class Orchestrator:
             
             try:
                 reasoning_step_count = 0
+                in_think_block = False
                 
                 for token in stream:
-                    if token:
-                        block_response_text += token
-                        
-                        # Chunk Output
-                        out_block_data = output_chunker.add_token(token)
-                        
-                        if out_block_data:
-                            reasoning_step_count += 1
-                            out_node_id = f"output_{i+1}_step_{reasoning_step_count}"
-                            
-                            # Create Output Node
-                            out_node = ExecutionNode(
-                                id=out_node_id,
-                                label=f"Reasoning {i+1}.{reasoning_step_count}",
-                                type=out_block_data['type'],
-                                position={"x": 250, "y": 200 + (i * 300) + (reasoning_step_count * 50)},
-                                data=out_block_data['metadata']
-                            )
-                            graph.nodes.append(out_node)
-                            
-                            # Link from previous (either input node or previous output step)
-                            source_id = retrieval_node_id if reasoning_step_count == 1 else f"output_{i+1}_step_{reasoning_step_count-1}"
-                            # Actually, normally connects from retrieval or input. Implementation plan says Input->Output. 
-                            # Let's chain them: Input -> Retrieval -> Output1 -> Output2...
-                            # But wait, visually Input and Retrieval are parallel "sources". 
-                            # Let's link Retrieval -> Output1 to show flow.
-                            
-                            graph.edges.append(ExecutionEdge(
-                                id=f"e_{source_id}_to_{out_node_id}",
-                                source=source_id,
-                                target=out_node_id,
-                                label="generated"
-                            ))
-                            
-                            # Update previous_node_id for the NEXT input block to chain after this output
-                            previous_node_id = out_node_id
+                    if not token:
+                        continue
+                    
+                    # --- THINK TAG FILTERING ---
+                    # Simple state machine to suppress <think>...</think> content
+                    token_to_process = token
+                    
+                    if "<think>" in token:
+                        in_think_block = True
+                        # If token has content before <think>, we keep it? 
+                        # Assuming token is usually granular, but if it contains partial text:
+                        # "Hello <think>" -> process "Hello "
+                        parts = token.split("<think>")
+                        token_to_process = parts[0]
+                    
+                    if "</think>" in token:
+                        in_think_block = False
+                        # If content after, process it
+                        parts = token.split("</think>")
+                        if len(parts) > 1:
+                             token_to_process = parts[1]
+                        else:
+                             token_to_process = ""
 
-                            # Emit Content Block
-                            yield ContextBlock(
-                                content=out_block_data['content'],
-                                type=out_block_data['type'],
-                                metadata=out_block_data['metadata'],
-                                execution_graph_id=graph.id,
-                                node_id=out_node_id,
-                                state=NodeState.FINISHED
-                            ).model_dump_json() + "\n"
+                    if in_think_block:
+                        continue
+                    
+                    if not token_to_process:
+                        continue
+                    
+                    # --- END FILTERING ---
 
-                            # Emit Graph Update
-                            yield ContextBlock(content="", type="graph_update", metadata={"graph": graph.model_dump()}, execution_graph_id=graph.id).model_dump_json() + "\n"
+                    block_response_text += token_to_process
+                    
+                    # Chunk Output
+                    out_block_data = output_chunker.add_token(token_to_process)
+                    
+                    if out_block_data:
+                        reasoning_step_count += 1
+                        out_node_id = f"output_{i+1}_step_{reasoning_step_count}"
+                        
+                        # Create Output Node
+                        out_node = ExecutionNode(
+                            id=out_node_id,
+                            label=f"Reasoning {i+1}.{reasoning_step_count}",
+                            type=out_block_data['type'],
+                            position={"x": 250, "y": 200 + (i * 300) + (reasoning_step_count * 50)},
+                            data=out_block_data['metadata']
+                        )
+                        graph.nodes.append(out_node)
+                        
+                        # Link from previous (either input node or previous output step)
+                        source_id = tool_node_id if reasoning_step_count == 1 else f"output_{i+1}_step_{reasoning_step_count-1}"
+                        
+                        graph.edges.append(ExecutionEdge(
+                            id=f"e_{source_id}_to_{out_node_id}",
+                            source=source_id,
+                            target=out_node_id,
+                            label="generated"
+                        ))
+                        
+                        previous_node_id = out_node_id
+
+                        # Emit Content Block
+                        yield ContextBlock(
+                            content=out_block_data['content'],
+                            type=out_block_data['type'],
+                            metadata=out_block_data['metadata'],
+                            execution_graph_id=graph.id,
+                            node_id=out_node_id,
+                            state=NodeState.FINISHED
+                        ).model_dump_json() + "\n"
+
+                        # Emit Graph Update
+                        self._persist_graph(graph)
+                        yield ContextBlock(content="", type="graph_update", metadata={"graph": graph.model_dump()}, execution_graph_id=graph.id).model_dump_json() + "\n"
 
                 # Flush Output Chunker
                 final_block = output_chunker.flush()
@@ -326,11 +591,12 @@ class Orchestrator:
                     )
                     graph.nodes.append(out_node)
                     
-                    source_id = retrieval_node_id if reasoning_step_count == 1 else f"output_{i+1}_step_{reasoning_step_count-1}"
+                    source_id = tool_node_id if reasoning_step_count == 1 else f"output_{i+1}_step_{reasoning_step_count-1}"
                     graph.edges.append(ExecutionEdge(id=f"e_{source_id}_to_{out_node_id}", source=source_id, target=out_node_id, label="generated"))
                     
                     previous_node_id = out_node_id
-
+                    
+                    self._persist_graph(graph)
                     yield ContextBlock(
                         content=final_block['content'], type=final_block['type'], metadata=final_block['metadata'], execution_graph_id=graph.id, node_id=out_node_id, state=NodeState.FINISHED
                     ).model_dump_json() + "\n"
@@ -340,10 +606,6 @@ class Orchestrator:
                 yield ContextBlock(content=f"Error processing block {i}: {e}", type="error").model_dump_json() + "\n"
 
         # 4. Save AI Response (Full aggregated)
-        # Note: We aren't aggregating the full response text variable here to save memory, 
-        # but could if needed. For now, Mongo saves are handled by the caller or we assumes steps are saved individually (future).
-        # Re-adding aggregation for compatibility with existing save_message
-        # (Simply logging completion here)
         logger.info(f"[{session_id}] Finished processing all input blocks.")
         
         # Final completion block
@@ -354,3 +616,16 @@ class Orchestrator:
             node_id="end",
             state=NodeState.FINISHED
         ).model_dump_json() + "\n"
+
+    def _persist_graph(self, graph: ExecutionGraph):
+        """Saves current graph state to src/web/execution_graph.json"""
+        import os
+        import json
+        try:
+            web_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")
+            os.makedirs(web_dir, exist_ok=True)
+            path = os.path.join(web_dir, "execution_graph.json")
+            with open(path, "w") as f:
+                f.write(graph.model_dump_json(indent=2))
+        except Exception as e:
+            logger.error(f"Failed to persist graph: {e}")

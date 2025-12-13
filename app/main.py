@@ -17,8 +17,19 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Cascade Context Protocol API")
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
+import os
+
 app.include_router(api_router)
-app.include_router(api_router)
+
+# --- Mount Static Files (Dashboard) ---
+WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src/web")
+app.mount("/web", StaticFiles(directory=WEB_DIR), name="web")
+
+@app.get("/dashboard")
+async def dashboard_redirect():
+    return RedirectResponse(url="/web/dashboard.html")
 
 @app.on_event("startup")
 async def startup_event():
@@ -42,21 +53,35 @@ async def startup_event():
             # Verify Qdrant sync
             try:
                 from qdrant_client import QdrantClient
+                from pydantic import ValidationError
                 qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
                 
                 # Check if function_registry collection exists
-                collections = qdrant.get_collections()
-                registry_exists = any(c.name == "function_registry" for c in collections.collections)
+                try:
+                    collections = qdrant.get_collections()
+                    registry_exists = any(c.name == "function_registry" for c in collections.collections)
+                except Exception as e:
+                    if "validation error" in str(e).lower():
+                        logger.warning(f"[STARTUP] ⚠️ Qdrant Validation Warning (get_collections) - ignoring extra fields.")
+                        registry_exists = True 
+                    else:
+                        raise e
                 
                 if registry_exists:
-                    collection_info = qdrant.get_collection("function_registry")
-                    point_count = collection_info.points_count
-                    logger.info(f"[STARTUP] ✅ Qdrant Sync: {point_count} functions in vector store")
-                    
-                    if point_count != tool_count:
-                        logger.warning(f"[STARTUP] ⚠️  Mismatch: {tool_count} tools in code, {point_count} in Qdrant")
-                        logger.info(f"[STARTUP] 🔄 Re-syncing registry...")
-                        llm_service._synchronize_registry()
+                    try:
+                        collection_info = qdrant.get_collection("function_registry")
+                        point_count = collection_info.points_count
+                        logger.info(f"[STARTUP] ✅ Qdrant Sync: {point_count} functions in vector store")
+                        
+                        if point_count != tool_count:
+                            logger.warning(f"[STARTUP] ⚠️  Mismatch: {tool_count} tools in code, {point_count} in Qdrant")
+                            logger.info(f"[STARTUP] 🔄 Re-syncing registry...")
+                            llm_service._synchronize_registry()
+                    except Exception as e:
+                        if "validation error" in str(e).lower():
+                            logger.warning(f"[STARTUP] ⚠️ Qdrant Validation Warning (get_collection) - skipping count check.")
+                        else:
+                            raise e
                 else:
                     logger.warning(f"[STARTUP] ⚠️  Qdrant collection 'function_registry' not found")
                     logger.info(f"[STARTUP] 🔄 Creating and syncing registry...")

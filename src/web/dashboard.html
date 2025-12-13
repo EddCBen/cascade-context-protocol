@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCP Live Execution Graph</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --text-color: #e0e0e0;
+            --panel-bg: #2d2d2d;
+            --accent: #4caf50;
+            --user-msg-bg: #3f51b5;
+            --ai-msg-bg: #424242;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #chat-panel {
+            width: 350px;
+            background-color: var(--panel-bg);
+            border-right: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+        }
+
+        #chat-header {
+            padding: 15px;
+            background: #222;
+            border-bottom: 1px solid #444;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        #chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 90%;
+            padding: 10px 15px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .msg-user {
+            align-self: flex-end;
+            background-color: var(--user-msg-bg);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .msg-ccp {
+            align-self: flex-start;
+            background-color: var(--ai-msg-bg);
+            color: #eee;
+            border-bottom-left-radius: 2px;
+        }
+
+        .msg-role {
+            font-size: 0.7em;
+            opacity: 0.7;
+            margin-bottom: 3px;
+            display: block;
+        }
+
+        #chat-input-area {
+            padding: 15px;
+            background: #222;
+            border-top: 1px solid #444;
+            display: flex;
+            gap: 10px;
+        }
+
+        #message-input {
+            flex-grow: 1;
+            background: #333;
+            border: 1px solid #555;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            outline: none;
+        }
+
+        #message-input:focus {
+            border-color: var(--accent);
+        }
+
+        #send-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #send-btn:hover {
+            opacity: 0.9;
+        }
+
+        #graph-container {
+            flex-grow: 1;
+            height: 100%;
+            background-color: #121212;
+            position: relative;
+        }
+
+        #details-panel {
+            width: 350px;
+            background-color: var(--panel-bg);
+            border-left: 1px solid #444;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: -2px 0 5px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--accent);
+            margin-top: 0;
+        }
+
+        .node-detail {
+            margin-bottom: 15px;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #aaa;
+            font-size: 0.9em;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .value {
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            background: #555;
+            margin-bottom: 10px;
+        }
+
+        #connection-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 4px;
+            font-size: 0.8em;
+            z-index: 100;
+        }
+
+        .status-live {
+            color: #4caf50;
+        }
+
+        .status-offline {
+            color: #f44336;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat-panel">
+        <div id="chat-header">Conversation History</div>
+        <div id="chat-messages">
+            <!-- Messages will be injected here -->
+        </div>
+        <div id="chat-input-area">
+            <input type="text" id="message-input" placeholder="Type a message..." onkeypress="handleKeyPress(event)">
+            <button id="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <div id="graph-container">
+        <div id="connection-status">Initializing...</div>
+    </div>
+
+    <div id="details-panel">
+        <h2>Node Details</h2>
+        <div id="node-content">
+            <p style="color: #888;">Select a node to view details.</p>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // --- Configuration ---
+        const CONTAINER = document.getElementById('graph-container');
+        const STATUS = document.getElementById('connection-status');
+        const DETAILS = document.getElementById('node-content');
+        const CHAT_BOX = document.getElementById('chat-messages');
+
+        // --- State ---
+        let network = null;
+        let nodes = new vis.DataSet([]);
+        let edges = new vis.DataSet([]);
+
+        // --- Options ---
+        const options = {
+            autoResize: true,
+            height: '100%',
+            width: '100%',
+            nodes: {
+                shape: 'box',
+                font: { color: '#fff' },
+                borderWidth: 2,
+                shadow: true,
+                margin: 10,
+                color: {
+                    background: '#607d8b',
+                    border: '#ffffff',
+                    highlight: { background: '#2196f3', border: '#ffffff' }
+                }
+            },
+            edges: {
+                arrows: 'to',
+                width: 2,
+                color: { color: '#888', highlight: '#fff' },
+                smooth: {
+                    enabled: true,
+                    type: "dynamic",
+                    roundness: 0.5
+                }
+            },
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    theta: 0.5,
+                    gravitationalConstant: -50,
+                    centralGravity: 0.01,
+                    springConstant: 0.08,
+                    springLength: 100,
+                    damping: 0.4,
+                    avoidOverlap: 1
+                },
+                stabilization: {
+                    enabled: true,
+                    iterations: 150, // Fast stabilize
+                    fit: true
+                }
+            },
+            layout: {
+                randomSeed: 2 // Consistent layout across reloads if data is same
+            }
+        };
+
+        // --- Init Network ---
+        const data = { nodes: nodes, edges: edges };
+        network = new vis.Network(CONTAINER, data, options);
+
+        network.on("click", function (params) {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                const node = nodes.get(nodeId);
+                showDetails(node);
+            }
+        });
+
+        // --- Render Details ---
+        function showDetails(node) {
+            if (!node) return;
+
+            let html = `<div class="status-badge">${node.type.toUpperCase()}</div>`;
+            html += `<h3 style="margin-bottom:10px;">${node.label}</h3>`;
+
+            // Generic Data Render
+            if (node.data) {
+                for (const [key, val] of Object.entries(node.data)) {
+                    let displayVal = val;
+                    if (typeof val === 'object') displayVal = JSON.stringify(val, null, 2);
+
+                    html += `<div class="node-detail">
+                        <span class="label">${key.toUpperCase()}</span>
+                        <div class="value">${displayVal}</div>
+                    </div>`;
+                }
+            }
+            DETAILS.innerHTML = html;
+        }
+
+        // --- Palette ---
+        const COLORS = {
+            input: '#9c27b0',      // Purple
+            tool: '#ff9800',       // Orange
+            thought: '#2196f3',    // Blue
+            output: '#4caf50',     // Green
+            reasoning: '#00bcd4',  // Cyan
+            default: '#607d8b'     // Grey
+        };
+
+        // --- Chat Render Helpers ---
+        function appendUserMessage(text) {
+            const html = `
+            <div class="message msg-user" style="border-right: 4px solid ${COLORS.input};">
+                <span class="msg-role" style="color: ${COLORS.input};">USER</span>
+                ${text.replace(/\n/g, '<br>')}
+            </div>`;
+            CHAT_BOX.insertAdjacentHTML('beforeend', html);
+            scrollToBottom();
+        }
+
+        function createAiMessageContainer(type = 'output') {
+            const color = COLORS[type] || COLORS.default;
+            const id = "ai-msg-" + Date.now();
+
+            const html = `
+            <div class="message msg-ccp" id="${id}" style="border-left: 4px solid ${color};">
+                <span class="msg-role" style="color: ${color};">CCP (${type.toUpperCase()})</span>
+                <span class="content"></span>
+            </div>`;
+            CHAT_BOX.insertAdjacentHTML('beforeend', html);
+            scrollToBottom();
+            return document.querySelector(`#${id} .content`);
+        }
+
+        function appendToolBlock(toolName, input) {
+            const color = COLORS.tool;
+            const html = `
+            <div class="message" style="background: #2d2d2d; font-family: monospace; font-size: 0.9em; border-left: 4px solid ${color}; margin-top: 5px;">
+                <div style="color: ${color}; font-weight: bold; padding-bottom: 5px; border-bottom: 1px solid #444;">
+                    🛠️ EXECUTING: ${toolName}
+                </div>
+                <div style="color: #ccc; margin-top: 5px; overflow-x: auto; white-space: pre-wrap;">${input}</div>
+            </div>`;
+            CHAT_BOX.insertAdjacentHTML('beforeend', html);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            CHAT_BOX.scrollTop = CHAT_BOX.scrollHeight;
+        }
+
+        // --- Interaction (Direct Stream) ---
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            input.value = "";
+            appendUserMessage(text);
+
+            // Initial Processing Container (Thinking/Graph updates usually come first)
+            let currentContainer = null;
+
+            STATUS.innerHTML = '<span class="status-live">● PROCESSING</span>';
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        session_id: "dashboard_" + Date.now(),
+                        granularity_level: 0.5
+                    })
+                });
+
+                if (!response.ok) throw new Error("API Error");
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const block = JSON.parse(line);
+
+                            // Handle Text Content
+                            if (block.content) {
+                                // Default content usually implies output
+                                if (!currentContainer) {
+                                    currentContainer = createAiMessageContainer('output');
+                                }
+                                currentContainer.innerText += block.content;
+                                scrollToBottom();
+                            }
+
+                            // Handle Tool
+                            if (block.type === "tool_execution") {
+                                appendToolBlock(block.metadata?.tool, block.metadata?.input_segment);
+                                currentContainer = null; // Reset text container so next text gets new block if needed
+                            }
+
+                            // Handle Graph
+                            if (block.type === "graph_update") {
+                                if (block.metadata?.graph) updateGraphState(block.metadata.graph);
+                            }
+
+                        } catch (e) {
+                            console.error("JSON Parse Error", e);
+                        }
+                    }
+                }
+                STATUS.innerHTML = '<span class="status-live">● IDLE</span>';
+
+            } catch (e) {
+                console.error(e);
+                STATUS.innerHTML = '<span class="status-offline">● ERROR</span>';
+            }
+        }
+
+        function updateGraphState(graph) {
+            if (graph.nodes) {
+                const newNodes = graph.nodes.map(n => ({
+                    id: n.id,
+                    label: n.label,
+                    type: n.type,
+                    data: n.data,
+                    color: getNodeColor(n.type)
+                }));
+                nodes.update(newNodes);
+            }
+
+            if (graph.edges) {
+                const newEdges = graph.edges.map(e => ({
+                    id: e.id,
+                    from: e.source,
+                    to: e.target,
+                    label: e.label
+                }));
+                edges.update(newEdges);
+            }
+
+            // Re-fit graph to view
+            if (network) {
+                network.fit({
+                    animation: {
+                        duration: 500,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            }
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+
+        // --- Color Helper ---
+        function getNodeColor(type) {
+            if (type === 'input' || type === 'input_segment') return COLORS.input;
+            if (type === 'tool_execution' || type === 'tool') return COLORS.tool;
+            if (type === 'thought' || type === 'reasoning') return COLORS.thought;
+            if (type === 'output') return COLORS.output;
+            return COLORS.default;
+        }
+
+        // Init
+        STATUS.innerHTML = '<span class="status-live">● READY</span>';
+
+        async function loadInitialGraph() {
+            try {
+                const resp = await fetch('/web/execution_graph.json');
+                if (resp.ok) {
+                    const graphData = await resp.json();
+                    updateGraphState(graphData);
+                    console.log("Loaded persisted graph.");
+                }
+            } catch (e) {
+                console.log("No persisted graph found or error loading.");
+            }
+        }
+
+        // Auto-load on start
+        loadInitialGraph();
+    </script>
+</body>
+
+</html>

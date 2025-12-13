@@ -1,0 +1,466 @@
+{
+  "id": "9445b545-b44b-42d7-850c-055c36b052ba",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "input",
+      "label": "Start",
+      "position": {
+        "x": 250.0,
+        "y": 0.0
+      },
+      "data": {}
+    },
+    {
+      "id": "input_block_1",
+      "type": "input_segment",
+      "label": "Input Chunk 1",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "content": "\"I need you to draft a quick 'Market Watch' email ..."
+      }
+    },
+    {
+      "id": "tool_exec_1",
+      "type": "tool_execution",
+      "label": "Tool: None",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "tool_name": "None",
+        "input": "\"I need you to draft a quick 'Market Watch' email for my team regarding the Commercial LEO Destinati",
+        "args": {},
+        "output_preview": "No Output/Context",
+        "tools_available": [],
+        "context_found": false
+      }
+    },
+    {
+      "id": "output_1_step_1",
+      "type": "text",
+      "label": "Reasoning 1.1",
+      "position": {
+        "x": 250.0,
+        "y": 250.0
+      },
+      "data": {
+        "step": 1,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_1_step_2",
+      "type": "text",
+      "label": "Reasoning 1.2",
+      "position": {
+        "x": 250.0,
+        "y": 300.0
+      },
+      "data": {
+        "step": 2,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_1_step_3",
+      "type": "text",
+      "label": "Reasoning 1.3",
+      "position": {
+        "x": 250.0,
+        "y": 350.0
+      },
+      "data": {
+        "step": 3,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_1_step_4",
+      "type": "text",
+      "label": "Reasoning 1.4",
+      "position": {
+        "x": 250.0,
+        "y": 400.0
+      },
+      "data": {
+        "step": 4,
+        "token_count": 7,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "input_block_2",
+      "type": "input_segment",
+      "label": "Input Chunk 2",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "content": "Please structure the email into three bullet point..."
+      }
+    },
+    {
+      "id": "tool_exec_2",
+      "type": "tool_execution",
+      "label": "Tool: None",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "tool_name": "None",
+        "input": "Please structure the email into three bullet points, but—and this is crucial—you must fill in the br",
+        "args": {},
+        "output_preview": "No Output/Context",
+        "tools_available": [],
+        "context_found": false
+      }
+    },
+    {
+      "id": "output_2_step_1",
+      "type": "text",
+      "label": "Reasoning 2.1",
+      "position": {
+        "x": 250.0,
+        "y": 550.0
+      },
+      "data": {
+        "step": 1,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_2_step_2",
+      "type": "reasoning_step",
+      "label": "Reasoning 2.2",
+      "position": {
+        "x": 250.0,
+        "y": 600.0
+      },
+      "data": {
+        "step": 2,
+        "token_count": 28,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "input_block_3",
+      "type": "input_segment",
+      "label": "Input Chunk 3",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "content": "Point 1 (The Capital Influx): Summarize the major ..."
+      }
+    },
+    {
+      "id": "tool_exec_3",
+      "type": "tool_execution",
+      "label": "Tool: None",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "tool_name": "None",
+        "input": "Point 1 (The Capital Influx): Summarize the major financial shift for Starlab that occurred in Novem",
+        "args": {},
+        "output_preview": "No Output/Context",
+        "tools_available": [],
+        "context_found": false
+      }
+    },
+    {
+      "id": "output_3_step_1",
+      "type": "text",
+      "label": "Reasoning 3.1",
+      "position": {
+        "x": 250.0,
+        "y": 850.0
+      },
+      "data": {
+        "step": 1,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_3_step_2",
+      "type": "text",
+      "label": "Reasoning 3.2",
+      "position": {
+        "x": 250.0,
+        "y": 900.0
+      },
+      "data": {
+        "step": 2,
+        "token_count": 13,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "input_block_4",
+      "type": "input_segment",
+      "label": "Input Chunk 4",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "content": "Confirm whether the Axiom-4 (Ax-4) mission with In..."
+      }
+    },
+    {
+      "id": "tool_exec_4",
+      "type": "tool_execution",
+      "label": "Tool: None",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "tool_name": "None",
+        "input": "Confirm whether the Axiom-4 (Ax-4) mission with Indian astronaut Shubhanshu Shukla actually launched",
+        "args": {},
+        "output_preview": "No Output/Context",
+        "tools_available": [],
+        "context_found": false
+      }
+    },
+    {
+      "id": "output_4_step_1",
+      "type": "text",
+      "label": "Reasoning 4.1",
+      "position": {
+        "x": 250.0,
+        "y": 1150.0
+      },
+      "data": {
+        "step": 1,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_4_step_2",
+      "type": "text",
+      "label": "Reasoning 4.2",
+      "position": {
+        "x": 250.0,
+        "y": 1200.0
+      },
+      "data": {
+        "step": 2,
+        "token_count": 9,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "input_block_5",
+      "type": "input_segment",
+      "label": "Input Chunk 5",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "content": "Verify if their 'Haven-1' flight article is curren..."
+      }
+    },
+    {
+      "id": "tool_exec_5",
+      "type": "tool_execution",
+      "label": "Tool: cross_check_fact",
+      "position": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "data": {
+        "tool_name": "cross_check_fact",
+        "input": "Verify if their 'Haven-1' flight article is currently in testing or if they have moved to final inte",
+        "args": {
+          "query": "Verify if their 'Haven-1' flight article is currently in testing or if they have moved to final integration as of this month.\nEnd the email with a brief recommendation on which of these three is winning the 'speed-to-market' race based only on the evidence you just found.\""
+        },
+        "output_preview": "Error executing cross_check_fact: cross_check_fact() got an unexpected keyword argument 'query'",
+        "tools_available": [
+          "cross_check_fact"
+        ],
+        "context_found": true
+      }
+    },
+    {
+      "id": "output_5_step_1",
+      "type": "text",
+      "label": "Reasoning 5.1",
+      "position": {
+        "x": 250.0,
+        "y": 1450.0
+      },
+      "data": {
+        "step": 1,
+        "token_count": 50,
+        "chunk_mode": "semantic"
+      }
+    },
+    {
+      "id": "output_5_step_2",
+      "type": "text",
+      "label": "Reasoning 5.2",
+      "position": {
+        "x": 250.0,
+        "y": 1500.0
+      },
+      "data": {
+        "step": 2,
+        "token_count": 8,
+        "chunk_mode": "semantic"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_to_input_block_1",
+      "source": "start",
+      "target": "input_block_1",
+      "label": "sequence"
+    },
+    {
+      "id": "e_input_block_1_to_tool_exec_1",
+      "source": "input_block_1",
+      "target": "tool_exec_1",
+      "label": "uses_tool"
+    },
+    {
+      "id": "e_tool_exec_1_to_output_1_step_1",
+      "source": "tool_exec_1",
+      "target": "output_1_step_1",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_1_step_1_to_output_1_step_2",
+      "source": "output_1_step_1",
+      "target": "output_1_step_2",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_1_step_2_to_output_1_step_3",
+      "source": "output_1_step_2",
+      "target": "output_1_step_3",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_1_step_3_to_output_1_step_4",
+      "source": "output_1_step_3",
+      "target": "output_1_step_4",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_1_step_4_to_input_block_2",
+      "source": "output_1_step_4",
+      "target": "input_block_2",
+      "label": "sequence"
+    },
+    {
+      "id": "e_input_block_2_to_tool_exec_2",
+      "source": "input_block_2",
+      "target": "tool_exec_2",
+      "label": "uses_tool"
+    },
+    {
+      "id": "e_tool_exec_2_to_output_2_step_1",
+      "source": "tool_exec_2",
+      "target": "output_2_step_1",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_2_step_1_to_output_2_step_2",
+      "source": "output_2_step_1",
+      "target": "output_2_step_2",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_2_step_2_to_input_block_3",
+      "source": "output_2_step_2",
+      "target": "input_block_3",
+      "label": "sequence"
+    },
+    {
+      "id": "e_input_block_3_to_tool_exec_3",
+      "source": "input_block_3",
+      "target": "tool_exec_3",
+      "label": "uses_tool"
+    },
+    {
+      "id": "e_tool_exec_3_to_output_3_step_1",
+      "source": "tool_exec_3",
+      "target": "output_3_step_1",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_3_step_1_to_output_3_step_2",
+      "source": "output_3_step_1",
+      "target": "output_3_step_2",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_3_step_2_to_input_block_4",
+      "source": "output_3_step_2",
+      "target": "input_block_4",
+      "label": "sequence"
+    },
+    {
+      "id": "e_input_block_4_to_tool_exec_4",
+      "source": "input_block_4",
+      "target": "tool_exec_4",
+      "label": "uses_tool"
+    },
+    {
+      "id": "e_tool_exec_4_to_output_4_step_1",
+      "source": "tool_exec_4",
+      "target": "output_4_step_1",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_4_step_1_to_output_4_step_2",
+      "source": "output_4_step_1",
+      "target": "output_4_step_2",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_4_step_2_to_input_block_5",
+      "source": "output_4_step_2",
+      "target": "input_block_5",
+      "label": "sequence"
+    },
+    {
+      "id": "e_input_block_5_to_tool_exec_5",
+      "source": "input_block_5",
+      "target": "tool_exec_5",
+      "label": "uses_tool"
+    },
+    {
+      "id": "e_tool_exec_5_to_output_5_step_1",
+      "source": "tool_exec_5",
+      "target": "output_5_step_1",
+      "label": "generated"
+    },
+    {
+      "id": "e_output_5_step_1_to_output_5_step_2",
+      "source": "output_5_step_1",
+      "target": "output_5_step_2",
+      "label": "generated"
+    }
+  ]
+}

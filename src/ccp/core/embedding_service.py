@@ -18,8 +18,10 @@ class EmbeddingService:
         Args:
             model_name: Kept for compatibility, but model is fixed on server side.
         """
+        from src.ccp.core.settings import settings
         import os
-        self.base_url = os.getenv("EMBEDDING_SERVICE_URL", "http://local-models:8082")
+        # Prioritize ENV, then Settings, then Fallback
+        self.base_url = os.getenv("EMBEDDING_SERVICE_URL", settings.embedding_service_url)
         self.model_name = model_name
         logger.info(f"[EmbeddingService] Initialized client for {self.base_url}")
         

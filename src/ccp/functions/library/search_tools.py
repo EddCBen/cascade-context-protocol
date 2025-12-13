@@ -184,7 +184,8 @@ def ccp_search(
     qdrant_collection: str = "function_registry"
 ) -> str:
     """
-    Unified search across Redis, MongoDB, Qdrant, and Web.
+    Unified search engine. Use this tool to find information, research topics, check status of projects, or retrieve facts from the knowledge base (Redis/MongoDB/Qdrant) and the Web.
+    Essential for answering questions about specific entities, timelines, technologies, or general knowledge.
     
     Args:
         query: Search query
@@ -201,31 +202,38 @@ def ccp_search(
         
         # Parse sources
         if sources == "all":
-            source_list = ["redis", "mongodb", "qdrant", "web"]
+            # Auto-mode: Local first, then Web if needed
+            local_sources = ["redis", "mongodb", "qdrant"]
+            for source in local_sources:
+                if source == "redis":
+                     all_results.extend(engine.search_redis(query))
+                elif source == "mongodb":
+                     all_results.extend(engine.search_mongodb(query, mongodb_collection))
+                elif source == "qdrant":
+                     all_results.extend(engine.search_qdrant(query, qdrant_collection))
+            
+            # Check if we have sufficient results
+            if not all_results:
+                print(f"[CCPSearch] No local results found for '{query}'. Falling back to Web.")
+                all_results.extend(engine.search_web(query))
         else:
+            # Explicit sources requested
             source_list = [s.strip() for s in sources.split(",")]
-        
-        # Collect results from each source
-        all_results = []
-        
-        if "redis" in source_list:
-            all_results.extend(engine.search_redis(query))
-        
-        if "mongodb" in source_list:
-            all_results.extend(engine.search_mongodb(query, mongodb_collection))
-        
-        if "qdrant" in source_list:
-            all_results.extend(engine.search_qdrant(query, qdrant_collection))
-        
-        if "web" in source_list:
-            all_results.extend(engine.search_web(query))
+            if "redis" in source_list:
+                all_results.extend(engine.search_redis(query))
+            if "mongodb" in source_list:
+                all_results.extend(engine.search_mongodb(query, mongodb_collection))
+            if "qdrant" in source_list:
+                all_results.extend(engine.search_qdrant(query, qdrant_collection))
+            if "web" in source_list:
+                all_results.extend(engine.search_web(query))
         
         # Aggregate and rank results
         final_results = engine.aggregate_results(all_results, max_results)
         
         return json.dumps({
             "query": query,
-            "sources_searched": source_list,
+            "sources_searched": sources if sources != "all" else (["local"] + (["web"] if not all_results else [])),
             "total_results": len(final_results),
             "results": final_results
         }, indent=2)
