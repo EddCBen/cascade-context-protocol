@@ -272,8 +272,6 @@ If you wish to use the **Cascade Context Protocol** for commercial purposes, inc
 
 **You MUST obtain a Commercial License.**
 
-Please contact **Charaf Eddine BENARAB** to negotiate a license agreement:
-*   charafeddineben@gmail.com
-*   charafeddineben@arkiom.co
+charafeddineben@gmail.com
 
 [View Full License](LICENSE)
