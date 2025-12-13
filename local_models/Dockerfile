@@ -12,13 +12,17 @@ RUN apt-get update && apt-get install -y \
 # Install python dependencies
 RUN pip install --no-cache-dir \
     huggingface_hub \
-    "llama-cpp-python[server]"
+    "llama-cpp-python[server]" \
+    sentence-transformers \
+    fastapi \
+    uvicorn
 
 # Create app directory
 WORKDIR /app
 
 # Copy startup script
 COPY start.sh /app/start.sh
+COPY embedding_server.py /app/embedding_server.py
 RUN chmod +x /app/start.sh
 
 # Environment variables

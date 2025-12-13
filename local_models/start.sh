@@ -16,7 +16,10 @@ else
     echo "Model found at $MODEL_PATH."
 fi
 
-echo "Starting Local LLM Server..."
+echo "Starting Embedding Server on port 8082..."
+python3 /app/embedding_server.py &
+
+echo "Starting Local LLM Server on port $PORT..."
 # Run llama-cpp-python server
 # -n_ctx 2048: Context window (adjust as needed)
 # -n_gpu_layers -1: Offload all to GPU if available (auto-detect)

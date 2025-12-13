@@ -11,10 +11,23 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from src.ccp.distillation.models import ScrapedData
-from src.ccp.neural.training_config import ScraperConfig
 from src.ccp.storage.mongo import MongoStorage
 
 logger = logging.getLogger(__name__)
+
+
+from dataclasses import dataclass
+
+@dataclass
+class ScraperConfig:
+    """Configuration for domain scraper."""
+    max_samples: int = 200
+    min_samples: int = 10
+    parallel: bool = True
+    max_workers: int = 5
+    retry_delay: float = 2.0
+    timeout: int = 15
+    max_retries: int = 3
 
 
 class DomainScraper:

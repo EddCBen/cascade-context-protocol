@@ -87,7 +87,7 @@ async def startup_event():
                     logger.warning(f"[STARTUP] Local LLM responded with {resp.status_code}: {resp.text}")
         except Exception as e:
             logger.error(f"[STARTUP] Failed to connect to Local LLM: {e}")
-            logger.warning(">>> Ensure 'local-llm' container is running <<<")
+            logger.warning(">>> Ensure 'local-models' container is running <<<")
     
     logger.info("[STARTUP] ✅ Startup Complete")
 @app.get("/")

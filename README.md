@@ -68,6 +68,9 @@ flowchart LR
         LLM <-->|Retrieve/Call| Collections
     end
     
+    %% Align subgraphs side-by-side
+    Memory ~~~ LLM
+    
     style CPU fill:#fff9c4,stroke:#fbc02d,color:#f57f17
     style LLM fill:#e1bee7,stroke:#8e24aa,color:#4a148c
     style Memory fill:#f5f5f5,stroke:#9e9e9e,color:#616161
@@ -77,6 +80,45 @@ flowchart LR
 
 1.  **Unified Awareness**: Just as the Von Neumann bottleneck is mitigated by unified access, CCP mitigates the "Context Bottleneck" by treating Tools (Instructions) and Information (Data) as retrievable vectors in the same implementation space.
 2.  **Self-Reflection**: The LLM can query the `Function-Store` to understand *what* it can do, dynamically formulating plans based on available tools—a form of meta-cognitive execution [5].
+
+---
+
+## Infinite Context Architecture: The Scroll of Truth
+
+To achieve a theoretically infinite context window, CCP abandons the traditional "linear history" model in favor of a **Linked Graph Memory** structure, often referred to as the "Scroll of Truth".
+
+### Input Segmentation & Sequential Processing
+When a user submits a massive input (e.g., a book or a long report), CCP does not attempt to stuff it into a single prompt. Instead, it employs **Dynamic Input Segmentation**:
+
+1.  **Segmentation**: The input is broken into semantic blocks using the `SemanticChunker`.
+2.  **Sequential Loop**: The Orchestrator processes these blocks sequentially.
+3.  **Active Retrieval**: For *each* input block, the system retrieves relevant *past* logic from the Graph (RAG), creating a localized context window that slides through the infinite data stream.
+
+```mermaid
+flowchart LR
+    Input["Massive User Input"] --> Chunker["Semantic Chunker"]
+    Chunker --> Seg1["Segment 1"]
+    Chunker --> Seg2["Segment 2"]
+    Chunker --> Seg3["Segment 3..."]
+
+    subgraph "Sequential Processing Loop"
+        Seg1 --> Ret1["Retrieve Context"]
+        Ret1 --> LLM1["LLM Processing"]
+        LLM1 --> Out1["Output Block 1"]
+        
+        Seg2 --> Ret2["Retrieve Context"]
+        Ret2 --> LLM2["LLM Processing"]
+        LLM2 --> Out2["Output Block 2"]
+        
+        Out1 -.->|Link| Out2
+    end
+    
+    style Input fill:#ffccbc,stroke:#bf360c
+    style LLM1 fill:#dcedc8,stroke:#33691e
+    style LLM2 fill:#dcedc8,stroke:#33691e
+```
+
+This architecture ensures that the "Immediate Context" (what the LLM sees right now) is always small and highly relevant, while the "Logical Context" (the graph it builds upon) is infinite.
 
 ---
 

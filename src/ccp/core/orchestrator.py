@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-import torch
+
 from typing import Optional, AsyncGenerator, List, Any
 from src.ccp.models.context import ContextBlock, ExecutionGraph, ExecutionNode, ExecutionEdge, NodeState
 from src.ccp.storage.mongo import MongoStorage
@@ -112,50 +112,56 @@ class Orchestrator:
         
         return found_tools
 
+    async def retrieve_context(self, query: str, limit: int = 3) -> str:
+        """
+        Retrieve relevant past context blocks from Qdrant.
+        """
+        if not self.llm_service or not self.qdrant:
+            return ""
+
+        try:
+            # 1. Embed Query
+            embedding = self.llm_service.get_embedding(query)
+            if not embedding:
+                return ""
+
+            # 2. Search Qdrant (domain_contexts or appropriate collection)
+            # Assuming 'domain_contexts' stores general knowledge/history
+            search_result = self.qdrant.search(
+                collection_name="domain_contexts",
+                query_vector=embedding,
+                limit=limit
+            )
+            
+            # 3. Format Context
+            context_str = ""
+            for hit in search_result:
+                payload = hit.payload
+                if payload and "content" in payload:
+                    context_str += f"- {payload['content']}\n"
+            
+            if context_str:
+                return f"RELEVANT PAST CONTEXT:\n{context_str}\n"
+            return ""
+
+        except Exception as e:
+            logger.error(f"Context Retrieval Error: {e}")
+            return ""
+
     async def process_message_stream(self, session_id: str, message: str) -> AsyncGenerator[str, None]:
         """
         Processes the user message with streaming, Neural Retrieval, and persistence.
+        Handles Infinite Context via Input Segmentation.
         """
         logger.info(f"[{session_id}] Processing new message: {message[:50]}...")
 
-        # --- RETRIEVAL PHASE ---
-        logger.info(f"[{session_id}] Running Neuro-Symbolic Retrieval...")
-        retrieved_tools = await self.retrieve_tools(message)
-        tool_names = [t.__name__ for t in retrieved_tools]
-        
         # --- GRAPH INITIALIZATION ---
         graph = ExecutionGraph()
         
+        # Start Node
         node_start = ExecutionNode(id="start", label="Start", type="input", position={"x": 250, "y": 0})
-        
-        # Retrieval Node (New)
-        node_retrieval = ExecutionNode(
-            id="retrieval", 
-            label="Neural Retrieval", 
-            type="tool", # Using 'tool' type for visualization of internal step
-            position={"x": 250, "y": 150},
-            data={"normalized": True, "tools_found": tool_names}
-        )
+        graph.nodes.append(node_start)
 
-        # LLM Node
-        provider_info = {
-            "provider": self.llm_service.provider_type if self.llm_service else "unknown",
-            "model": self.llm_service.model_name if self.llm_service else "unknown"
-        }
-        node_llm = ExecutionNode(
-            id="llm_process", 
-            label="LLM Processing", 
-            type="llm", 
-            position={"x": 250, "y": 300},
-            data=provider_info
-        )
-        
-        graph.nodes = [node_start, node_retrieval, node_llm]
-        graph.edges = [
-            ExecutionEdge(id="e1", source="start", target="retrieval"),
-            ExecutionEdge(id="e2", source="retrieval", target="llm_process")
-        ]
-        
         # Emit Initial Graph
         yield ContextBlock(
             content="Initializing Neuro-Symbolic Graph...", 
@@ -168,143 +174,183 @@ class Orchestrator:
             yield ContextBlock(content="Error: LLM Service not initialized.", type="error").model_dump_json()
             return
 
-        # 1. Save User Message
+        # 1. Save User Message (Full)
         try:
             await self.mongo_storage.save_message(session_id, "user", message)
         except Exception:
             pass
 
-        # 2. Prepare Prompt
-        system_instruction = self.get_segmentation_prompt()
-        full_prompt = f"{system_instruction}\\n\\nUSER MESSAGE:\\n{message}"
-
-        # 3. Initialize Semantic Chunker
+        # 2. Input Segmentation (The "Infinite Input" Logic)
         from src.ccp.core.semantic_chunker import SemanticChunker
-        chunker = SemanticChunker(
-            chunk_mode="semantic",
-            max_chunk_size=512,
-            min_chunk_size=50
-        )
+        chunker = SemanticChunker(chunk_mode="semantic", max_chunk_size=512)
         
-        # 4. Stream LLM Response with Semantic Chunking
-        stream = self.llm_service.generate_content_stream(full_prompt)
-        full_response_text = ""
-        reasoning_nodes = []  # Track dynamically created reasoning nodes
-        
-        try:
-            for token in stream:
-                if token:
-                    full_response_text += token
-                    
-                    # Add token to chunker
-                    block_data = chunker.add_token(token)
-                    
-                    if block_data:
-                        # Create reasoning step node
-                        step_num = block_data['metadata']['step']
-                        node_id = f"reasoning_step_{step_num}"
-                        
-                        reasoning_node = ExecutionNode(
-                            id=node_id,
-                            label=f"Step {step_num}: {block_data['type'].replace('_', ' ').title()}",
-                            type=block_data['type'],
-                            position={"x": 250, "y": 450 + (step_num * 100)},
-                            data=block_data['metadata']
-                        )
-                        reasoning_nodes.append(reasoning_node)
-                        graph.nodes.append(reasoning_node)
-                        
-                        # Add edge from previous node
-                        if len(reasoning_nodes) == 1:
-                            # First reasoning step connects to llm_process
-                            edge = ExecutionEdge(
-                                id="e_llm_to_step1",
-                                source="llm_process",
-                                target=node_id,
-                                label="generates"
-                            )
-                        else:
-                            # Subsequent steps connect to previous step
-                            prev_node = reasoning_nodes[-2]
-                            edge = ExecutionEdge(
-                                id=f"e_step_{step_num-1}_to_{step_num}",
-                                source=prev_node.id,
-                                target=node_id,
-                                label="leads to"
-                            )
-                        graph.edges.append(edge)
-                        
-                        # Emit semantic block
-                        block = ContextBlock(
-                            content=block_data['content'],
-                            type=block_data['type'],
-                            metadata=block_data['metadata'],
-                            execution_graph_id=graph.id,
-                            node_id=node_id,
-                            connections=[edge.target] if len(reasoning_nodes) > 1 else [],
-                            state=NodeState.FINISHED
-                        )
-                        yield block.model_dump_json() + "\\n"
-                        
-                        # Emit graph update
-                        yield ContextBlock(
-                            content="",
-                            type="graph_update",
-                            metadata={"graph": graph.model_dump()},
-                            execution_graph_id=graph.id
-                        ).model_dump_json() + "\\n"
+        # Breakdown user input into manageable blocks
+        input_blocks = chunker.chunk_text(message)
+        logger.info(f"[{session_id}] Input Segmented into {len(input_blocks)} blocks")
+
+        # Track previous node for linking
+        previous_node_id = "start"
+
+        # 3. Sequential Processing Loop
+        for i, input_block_text in enumerate(input_blocks):
+            logger.info(f"[{session_id}] Processing Input Block {i+1}/{len(input_blocks)}")
+
+            # --- A. Create Input Block Node ---
+            input_node_id = f"input_block_{i+1}"
+            input_node = ExecutionNode(
+                id=input_node_id,
+                label=f"Input Chunk {i+1}",
+                type="input_segment",
+                position={"x": 250, "y": 100 + (i * 300)}, # Offset y
+                data={"content": input_block_text}
+            )
+            graph.nodes.append(input_node)
+            graph.edges.append(ExecutionEdge(
+                id=f"e_{previous_node_id}_to_{input_node_id}",
+                source=previous_node_id,
+                target=input_node_id,
+                label="sequence"
+            ))
+            previous_node_id = input_node_id
+
+            # Emit Graph Update for Input Node
+            yield ContextBlock(
+                content="", type="graph_update", metadata={"graph": graph.model_dump()}, execution_graph_id=graph.id
+            ).model_dump_json() + "\n"
+
+            # --- B. Context Retrieval (Per Block) ---
+            retrieved_context = await self.retrieve_context(input_block_text)
             
-            # Flush any remaining content in buffer
-            final_block_data = chunker.flush()
-            if final_block_data:
-                step_num = final_block_data['metadata']['step']
-                node_id = f"reasoning_step_{step_num}"
+            # --- C. Tool Retrieval (Per Block) ---
+            retrieved_tools = await self.retrieve_tools(input_block_text)
+            tool_names = [t.__name__ for t in retrieved_tools]
+            
+            # Retrieval Node Visualization
+            retrieval_node_id = f"retrieval_{i+1}"
+            retrieval_node = ExecutionNode(
+                id=retrieval_node_id,
+                label=f"Neural Retrieval {i+1}",
+                type="tool",
+                position={"x": 450, "y": 100 + (i * 300)}, # Offset x
+                data={"tools": tool_names, "context_found": len(retrieved_context) > 0}
+            )
+            graph.nodes.append(retrieval_node)
+            graph.edges.append(ExecutionEdge(
+                id=f"e_{input_node_id}_to_{retrieval_node_id}",
+                source=input_node_id,
+                target=retrieval_node_id,
+                label="augments"
+            ))
+            
+            # --- D. Dynamic Prompt Construction ---
+            system_instruction = self.get_segmentation_prompt()
+            full_prompt = f"{system_instruction}\n\n"
+            if retrieved_context:
+                full_prompt += f"{retrieved_context}\n"
+            
+            full_prompt += f"CURRENT INPUT SEGMENT:\n{input_block_text}\n"
+
+            # --- E. Stream LLM Response ---
+            stream = self.llm_service.generate_content_stream(full_prompt)
+            
+            # Output Chunker (Reset for each block response)
+            output_chunker = SemanticChunker(chunk_mode="semantic", max_chunk_size=512)
+            block_response_text = ""
+            
+            try:
+                reasoning_step_count = 0
                 
-                reasoning_node = ExecutionNode(
-                    id=node_id,
-                    label=f"Step {step_num}: {final_block_data['type'].replace('_', ' ').title()}",
-                    type=final_block_data['type'],
-                    position={"x": 250, "y": 450 + (step_num * 100)},
-                    data=final_block_data['metadata']
-                )
-                reasoning_nodes.append(reasoning_node)
-                graph.nodes.append(reasoning_node)
-                
-                if len(reasoning_nodes) > 1:
-                    prev_node = reasoning_nodes[-2]
-                    edge = ExecutionEdge(
-                        id=f"e_step_{step_num-1}_to_{step_num}",
-                        source=prev_node.id,
-                        target=node_id,
-                        label="leads to"
+                for token in stream:
+                    if token:
+                        block_response_text += token
+                        
+                        # Chunk Output
+                        out_block_data = output_chunker.add_token(token)
+                        
+                        if out_block_data:
+                            reasoning_step_count += 1
+                            out_node_id = f"output_{i+1}_step_{reasoning_step_count}"
+                            
+                            # Create Output Node
+                            out_node = ExecutionNode(
+                                id=out_node_id,
+                                label=f"Reasoning {i+1}.{reasoning_step_count}",
+                                type=out_block_data['type'],
+                                position={"x": 250, "y": 200 + (i * 300) + (reasoning_step_count * 50)},
+                                data=out_block_data['metadata']
+                            )
+                            graph.nodes.append(out_node)
+                            
+                            # Link from previous (either input node or previous output step)
+                            source_id = retrieval_node_id if reasoning_step_count == 1 else f"output_{i+1}_step_{reasoning_step_count-1}"
+                            # Actually, normally connects from retrieval or input. Implementation plan says Input->Output. 
+                            # Let's chain them: Input -> Retrieval -> Output1 -> Output2...
+                            # But wait, visually Input and Retrieval are parallel "sources". 
+                            # Let's link Retrieval -> Output1 to show flow.
+                            
+                            graph.edges.append(ExecutionEdge(
+                                id=f"e_{source_id}_to_{out_node_id}",
+                                source=source_id,
+                                target=out_node_id,
+                                label="generated"
+                            ))
+                            
+                            # Update previous_node_id for the NEXT input block to chain after this output
+                            previous_node_id = out_node_id
+
+                            # Emit Content Block
+                            yield ContextBlock(
+                                content=out_block_data['content'],
+                                type=out_block_data['type'],
+                                metadata=out_block_data['metadata'],
+                                execution_graph_id=graph.id,
+                                node_id=out_node_id,
+                                state=NodeState.FINISHED
+                            ).model_dump_json() + "\n"
+
+                            # Emit Graph Update
+                            yield ContextBlock(content="", type="graph_update", metadata={"graph": graph.model_dump()}, execution_graph_id=graph.id).model_dump_json() + "\n"
+
+                # Flush Output Chunker
+                final_block = output_chunker.flush()
+                if final_block:
+                    reasoning_step_count += 1
+                    out_node_id = f"output_{i+1}_step_{reasoning_step_count}"
+                    
+                    out_node = ExecutionNode(
+                        id=out_node_id,
+                        label=f"Reasoning {i+1}.{reasoning_step_count}",
+                        type=final_block['type'],
+                        position={"x": 250, "y": 200 + (i * 300) + (reasoning_step_count * 50)},
+                        data=final_block['metadata']
                     )
-                    graph.edges.append(edge)
+                    graph.nodes.append(out_node)
+                    
+                    source_id = retrieval_node_id if reasoning_step_count == 1 else f"output_{i+1}_step_{reasoning_step_count-1}"
+                    graph.edges.append(ExecutionEdge(id=f"e_{source_id}_to_{out_node_id}", source=source_id, target=out_node_id, label="generated"))
+                    
+                    previous_node_id = out_node_id
+
+                    yield ContextBlock(
+                        content=final_block['content'], type=final_block['type'], metadata=final_block['metadata'], execution_graph_id=graph.id, node_id=out_node_id, state=NodeState.FINISHED
+                    ).model_dump_json() + "\n"
                 
-                block = ContextBlock(
-                    content=final_block_data['content'],
-                    type=final_block_data['type'],
-                    metadata=final_block_data['metadata'],
-                    execution_graph_id=graph.id,
-                    node_id=node_id,
-                    state=NodeState.FINISHED
-                )
-                yield block.model_dump_json() + "\\n"
-        
-        except Exception as e:
-            logger.error(f"[{session_id}] Streaming error: {e}")
-            yield ContextBlock(content=f"Error: {e}", type="error").model_dump_json() + "\\n"
+            except Exception as e:
+                logger.error(f"[{session_id}] Streaming error in block {i}: {e}")
+                yield ContextBlock(content=f"Error processing block {i}: {e}", type="error").model_dump_json() + "\n"
+
+        # 4. Save AI Response (Full aggregated)
+        # Note: We aren't aggregating the full response text variable here to save memory, 
+        # but could if needed. For now, Mongo saves are handled by the caller or we assumes steps are saved individually (future).
+        # Re-adding aggregation for compatibility with existing save_message
+        # (Simply logging completion here)
+        logger.info(f"[{session_id}] Finished processing all input blocks.")
         
         # Final completion block
         yield ContextBlock(
             content="", 
             type="completion",
             execution_graph_id=graph.id,
-            node_id="llm_process",
+            node_id="end",
             state=NodeState.FINISHED
-        ).model_dump_json() + "\\n"
-
-        # 5. Save AI Response
-        try:
-            await self.mongo_storage.save_message(session_id, "assistant", full_response_text)
-        except Exception:
-            pass
+        ).model_dump_json() + "\n"

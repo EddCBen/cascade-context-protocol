@@ -8,5 +8,5 @@ neuro_transmitter:
   # The local fast/cheap model (Qwen)
   local_axon:
     provider: llama_cpp
-    base_url: http://local-llm:8081/v1
+    base_url: http://local-models:8081/v1
     model: Qwen/Qwen2.5-1.5B-Instruct-GGUF

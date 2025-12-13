@@ -199,6 +199,52 @@ class SemanticChunker:
             return block_data
         return None
     
+    def chunk_text(self, text: str) -> List[str]:
+        """
+        Chunk static text into semantic blocks.
+        Useful for large user inputs.
+        
+        Args:
+            text: Full input text
+            
+        Returns:
+            List of text chunks
+        """
+        chunks = []
+        current_chunk = ""
+        
+        # Split by semantic boundaries (paragraphs mostly for inputs)
+        # We can also use sentence splitting for finer granularity
+        paragraphs = text.split("\n\n")
+        
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+                
+            # If paragraph is too large, split by sentences
+            if len(para.split()) > self.max_chunk_size:
+                sentences = re.split(r'(?<=[.!?])\s+', para)
+                for sentence in sentences:
+                    if len((current_chunk + "\n" + sentence).split()) > self.max_chunk_size:
+                        if current_chunk:
+                            chunks.append(current_chunk.strip())
+                        current_chunk = sentence
+                    else:
+                        current_chunk += "\n" + sentence if current_chunk else sentence
+            else:
+                if len((current_chunk + "\n\n" + para).split()) > self.max_chunk_size:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = para
+                else:
+                    current_chunk += "\n\n" + para if current_chunk else para
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+            
+        return chunks
+
     def reset(self):
         """Reset chunker state."""
         self.buffer = ""

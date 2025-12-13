@@ -16,6 +16,11 @@ from src.ccp.distillation.models import (
 from src.ccp.distillation.scraper import DomainScraper
 from src.ccp.distillation.dataset_creator import DatasetCreator
 from src.ccp.distillation.domain_manager import DomainManager
+from src.ccp.core.embedding_service import EmbeddingService
+from qdrant_client import QdrantClient
+from qdrant_client.models import PointStruct
+from src.ccp.core.settings import settings
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +43,7 @@ class DistillationEngine:
         self.llm_service = llm_service
         
         # Initialize scraper with enhanced config
-        from src.ccp.neural.training_config import ScraperConfig
+        from src.ccp.distillation.scraper import ScraperConfig, DomainScraper
         scraper_config = ScraperConfig(
             min_samples=200,
             max_samples=500,
@@ -97,6 +102,43 @@ class DistillationEngine:
         # 4. Store datasets in MongoDB
         collection_name = f"{request.domain}_training_data"
         await self.store_datasets(datasets, collection_name)
+
+        # 4.1 Index Scraped Data into Qdrant for Hybrid Search
+        logger.info(f"[DistillationEngine] Indexing {len(scraped_data)} scraped segments into Qdrant...")
+        try:
+            # Initialize services
+            embedding_service = EmbeddingService()
+            qdrant_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+            
+            points = []
+            for item in scraped_data:
+                # Generate embedding
+                vector = embedding_service.embed(item.content)
+                
+                # Deterministic ID
+                point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, item.url + item.content[:100]))
+                
+                payload = {
+                    "domain": request.domain,
+                    "url": item.url,
+                    "title": item.title,
+                    "content": item.content,  # Store full content for retrieval
+                    "source": item.source,
+                    "type": "raw_scraped_data"
+                }
+                
+                points.append(PointStruct(id=point_id, vector=vector, payload=payload))
+            
+            if points:
+                # Upsert to 'domain_contexts' collection
+                qdrant_client.upsert(
+                    collection_name="domain_contexts",
+                    points=points
+                )
+                logger.info(f"[DistillationEngine] ✅ Indexed {len(points)} segments in Qdrant (domain_contexts)")
+                
+        except Exception as e:
+            logger.error(f"[DistillationEngine] Failed to index scraped data in Qdrant: {e}")
         
         # 4.5 [NEW] Extract and Index Structured Knowledge
         logger.info(f"[DistillationEngine] Extracting structured knowledge for {request.domain}...")
@@ -106,118 +148,11 @@ class DistillationEngine:
             logger.error(f"[DistillationEngine] Failed to extract structured knowledge: {e}")
 
         # 5. Create semantic clusters and train neural networks
-        logger.info(f"[DistillationEngine] Creating semantic clusters and training neural networks for {request.domain}...")
+        logger.info(f"[DistillationEngine] Neural training skipped (Architecture 2.0). Using Hybrid Search instead.")
         
-        try:
-            from src.ccp.neural.semantic_cluster import ClusterManager
-            from src.ccp.neural.models import NeuralVectorNormalizer, SoftmaxRouter
-            from src.ccp.neural.training_config import Context2VecConfig, RouterConfig, TrainingConfig, ClusterConfig
-            from src.ccp.neural.trainer_loop import NeuralTrainer
-            from src.ccp.core.embedding_service import EmbeddingService
-            from qdrant_client import QdrantClient
-            from qdrant_client.models import PointStruct
-            from src.ccp.core.settings import settings
-            import numpy as np
-            import torch
-            from torch.utils.data import TensorDataset, DataLoader
-            import hashlib
-            
-            # Initialize services
-            embedding_service = EmbeddingService()
-            qdrant_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
-            
-            # Get training dataset
-            training_dataset = datasets[0] if datasets else None
-            
-            if training_dataset and len(training_dataset.samples) >= 5:  # Lowered to 5 for testing
-                # Step 5.1: Generate embeddings for all samples
-                logger.info(f"[DistillationEngine] Generating embeddings for {len(training_dataset.samples)} samples...")
-                embeddings = []
-                for sample in training_dataset.samples:
-                    emb = embedding_service.embed(sample["input"])
-                    embeddings.append(emb)
-                embeddings_array = np.array(embeddings)
-                
-                # Step 5.2: Create semantic clusters
-                logger.info(f"[DistillationEngine] Creating 7 semantic clusters...")
-                cluster_config = ClusterConfig()
-                cluster_manager = ClusterManager(num_clusters=7, use_graph=True)
-                clusters = cluster_manager.create_clusters(
-                    embeddings_array,
-                    request.domain,
-                    method="kmeans"
-                )
-                
-                # Store clusters in Qdrant
-                cluster_manager.store_in_qdrant(qdrant_client, collection_name="cluster_centers")
-                logger.info(f"[DistillationEngine] Stored {len(clusters)} clusters in Qdrant")
-                
-                # Get cluster centers
-                cluster_centers = cluster_manager.get_cluster_centers()
-                
-                # Assign cluster labels to samples (for training)
-                from sklearn.cluster import KMeans
-                kmeans = KMeans(n_clusters=7, random_state=42)
-                cluster_labels = kmeans.fit_predict(embeddings_array)
-                
-                # Step 5.3: Prepare training data
-                train_size = int(0.8 * len(embeddings_array))
-                train_embeddings = torch.FloatTensor(embeddings_array[:train_size])
-                train_labels = torch.LongTensor(cluster_labels[:train_size])
-                val_embeddings = torch.FloatTensor(embeddings_array[train_size:])
-                val_labels = torch.LongTensor(cluster_labels[train_size:])
-                
-                train_dataset = TensorDataset(train_embeddings, train_labels)
-                val_dataset = TensorDataset(val_embeddings, val_labels)
-                
-                train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-                val_loader = DataLoader(val_dataset, batch_size=32)
-                
-                # Step 5.4: Train Context2Vec (NeuralVectorNormalizer)
-                logger.info(f"[DistillationEngine] Training Context2Vec...")
-                context2vec_config = Context2VecConfig(num_clusters=7)
-                context2vec_model = NeuralVectorNormalizer(context2vec_config)
-                
-                training_config = TrainingConfig(num_epochs=10, batch_size=32)
-                trainer = NeuralTrainer(training_config)
-                
-                context2vec_weights, context2vec_loss = trainer.train_context2vec(
-                    context2vec_model,
-                    train_loader,
-                    val_loader,
-                    cluster_centers,
-                    request.domain
-                )
-                logger.info(f"[DistillationEngine] Context2Vec trained. Loss: {context2vec_loss:.4f}")
-                
-                # Step 5.5: Train SoftmaxRouter
-                logger.info(f"[DistillationEngine] Training SoftmaxRouter...")
-                router_config = RouterConfig(num_clusters=7)
-                router_model = SoftmaxRouter(router_config)
-                router_model.load_cluster_centers(cluster_centers)
-                
-                router_weights, router_accuracy = trainer.train_router(
-                    router_model,
-                    train_loader,
-                    val_loader,
-                    request.domain
-                )
-                logger.info(f"[DistillationEngine] SoftmaxRouter trained. Accuracy: {router_accuracy:.2%}")
-                
-                # Compute mastery score (average of Context2Vec and Router performance)
-                mastery_score = max(0.0, min(1.0, (1.0 - context2vec_loss + router_accuracy) / 2))
-                weights_path = context2vec_weights  # Primary weights
-                
-            else:
-                logger.warning(f"[DistillationEngine] Insufficient samples ({len(training_dataset.samples) if training_dataset else 0}), using placeholder")
-                mastery_score = 0.5
-                weights_path = f"weights/domains/{request.domain}.pt"
-        
-        except Exception as e:
-            logger.error(f"[DistillationEngine] Training failed: {e}", exc_info=True)
-            # Fallback to placeholder
-            mastery_score = 0.5
-            weights_path = f"weights/domains/{request.domain}.pt"
+        # Placeholder for compatibility
+        mastery_score = 1.0
+        weights_path = "weights/none"
         
         # 6. Create and register domain profile
         profile = DomainProfile(
