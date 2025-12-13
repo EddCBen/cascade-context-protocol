@@ -65,8 +65,7 @@ async def chat_endpoint(request: ChatRequest):
         # Instantiating orchestrator with requested granularity
         orchestrator = Orchestrator(
             granularity=request.granularity_level,
-            llm_service=llm_service,
-            active_domains=request.domains  # Pass domain filter
+            llm_service=llm_service
         )
         
         # We rely on StreamingResponse to iterate over the async generator

@@ -42,7 +42,7 @@ Thumbs.db
 # Project specific
 .env
 *.log
-state.yaml
+# state.yaml
 
 # Model weights and checkpoints
 weights/
@@ -53,3 +53,4 @@ weights/
 *.pb
 checkpoints/
 models/saved/
+scripts/

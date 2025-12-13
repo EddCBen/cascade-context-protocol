@@ -65,18 +65,39 @@ class LLMService:
     def _synchronize_registry(self):
         """Synchronize function registry with MongoDB and Qdrant."""
         try:
+            from src.ccp.storage.mongo_qdrant_sync import MongoQdrantSyncService
+            
             mongo_client = MongoClient(settings.mongo_uri)
             qdrant_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
             
-            logger.info("[LLMService] Synchronizing Function Registry with vector store...")
-            self.registry.synchronize_stores(
+            # Initialize sync service
+            logger.info("[LLMService] Initializing MongoDB-Qdrant Sync Service...")
+            self.sync_service = MongoQdrantSyncService(
                 mongo_client=mongo_client,
                 qdrant_client=qdrant_client,
-                list_embedding_func=self.get_embedding
+                embedding_service=self.embedding_service
             )
-            logger.info("[LLMService] Registry synchronization complete")
+            
+            # Run sync operations synchronously (no async/await in __init__)
+            logger.info("[LLMService] Initializing Qdrant collections...")
+            self.sync_service.initialize_collections_sync()
+            
+            logger.info("[LLMService] Syncing Function Registry...")
+            self.sync_service.sync_function_registry_sync(self.registry.tools)
+            
+            logger.info("[LLMService] Syncing all shared data...")
+            sync_report = self.sync_service.auto_sync_all_sync()
+            
+            logger.info("[LLMService] ✅ Synchronization complete")
+            logger.info(f"[LLMService] Sync Report Summary:")
+            logger.info(f"  - Function Registry: {sync_report.get('function_registry', {})}")
+            logger.info(f"  - Cluster Centers: {len(sync_report.get('cluster_centers', {}))} domains")
+            logger.info(f"  - Domain Contexts: {len(sync_report.get('domain_contexts', {}))} domains")
+            
         except Exception as e:
-            logger.error(f"[LLMService] Registry synchronization failed: {e}")
+            logger.error(f"[LLMService] Synchronization failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     # ==================== Context Management ====================
     

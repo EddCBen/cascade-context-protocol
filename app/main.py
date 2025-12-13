@@ -24,21 +24,54 @@ app.include_router(api_router)
 async def startup_event():
     logger.info(">>> Kicking off Startup Hooks <<<")
     
-    # 1. Trigger Registry Sync
-    # Accessing the registry instance on the service directly
+    # 1. Verify Function Registry Population
     if hasattr(llm_service, 'registry'):
-        logger.info("[STARTUP] Triggering Registry Sync (Self-Healing)...")
-        # Reuse existing clients if possible or create temp ones? 
-        # The service __init__ already runs it!
-        # But per instruction: "Trigger FunctionRegistry.synchronize_stores()."
-        # Since it runs on __init__, and llm_service is instantiated at module level in routes,
-        # it has already run when we imported app.routes.
-        # However, for robustness/logging, we can run it again or just log status.
-        # But wait, the instruction says "Ensure this synchronization runs automatically when... initialized... In app/main.py... Trigger..."
-        # I'll re-run it or at least log that it's active.
-        # Actually, let's keep it simple. It ran on import.
-        # I will focus on the Ping Check requested.
-        pass
+        logger.info("[STARTUP] ========================================")
+        logger.info("[STARTUP] FUNCTION REGISTRY VERIFICATION")
+        logger.info("[STARTUP] ========================================")
+        
+        registry = llm_service.registry
+        tool_count = len(registry.tools)
+        
+        if tool_count > 0:
+            logger.info(f"[STARTUP] ✅ Function Registry POPULATED: {tool_count} tools discovered")
+            logger.info(f"[STARTUP] 📋 Registered Tools:")
+            for i, tool_name in enumerate(sorted(registry.tools.keys()), 1):
+                logger.info(f"[STARTUP]    {i}. {tool_name}")
+            
+            # Verify Qdrant sync
+            try:
+                from qdrant_client import QdrantClient
+                qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+                
+                # Check if function_registry collection exists
+                collections = qdrant.get_collections()
+                registry_exists = any(c.name == "function_registry" for c in collections.collections)
+                
+                if registry_exists:
+                    collection_info = qdrant.get_collection("function_registry")
+                    point_count = collection_info.points_count
+                    logger.info(f"[STARTUP] ✅ Qdrant Sync: {point_count} functions in vector store")
+                    
+                    if point_count != tool_count:
+                        logger.warning(f"[STARTUP] ⚠️  Mismatch: {tool_count} tools in code, {point_count} in Qdrant")
+                        logger.info(f"[STARTUP] 🔄 Re-syncing registry...")
+                        llm_service._synchronize_registry()
+                else:
+                    logger.warning(f"[STARTUP] ⚠️  Qdrant collection 'function_registry' not found")
+                    logger.info(f"[STARTUP] 🔄 Creating and syncing registry...")
+                    llm_service._synchronize_registry()
+                    
+            except Exception as e:
+                logger.error(f"[STARTUP] ❌ Qdrant verification failed: {e}")
+        else:
+            logger.error(f"[STARTUP] ❌ Function Registry is EMPTY!")
+            logger.error(f"[STARTUP] 🔍 Check that functions are decorated with @expose_as_ccp_tool")
+            logger.error(f"[STARTUP] 🔍 Check that src/ccp/functions/library modules are importable")
+        
+        logger.info("[STARTUP] ========================================")
+    else:
+        logger.error("[STARTUP] ❌ LLM Service has no registry attribute!")
 
     # 2. Ping Local LLM
     if settings.llm_provider == "local":
@@ -46,18 +79,17 @@ async def startup_event():
         logger.info(f"[STARTUP] Checking Local LLM Connectivity at {base_url}...")
         try:
             async with httpx.AsyncClient() as client:
-                # Basic health check or models list
-                # base_url usually ends in /v1, so we append /models
-                # If base_url is "http://host:8081/v1", we want "http://host:8081/v1/models"
                 url = f"{base_url}/models"
                 resp = await client.get(url, timeout=5.0)
                 if resp.status_code == 200:
-                    logger.info(f"[STARTUP] Local LLM Connected! Models available: {len(resp.json().get('data', []))}")
+                    logger.info(f"[STARTUP] ✅ Local LLM Connected! Models available: {len(resp.json().get('data', []))}")
                 else:
                     logger.warning(f"[STARTUP] Local LLM responded with {resp.status_code}: {resp.text}")
         except Exception as e:
             logger.error(f"[STARTUP] Failed to connect to Local LLM: {e}")
-            logger.warning(">>> Ensure 'local-llm' container is running <<")
+            logger.warning(">>> Ensure 'local-llm' container is running <<<")
+    
+    logger.info("[STARTUP] ✅ Startup Complete")
 @app.get("/")
 async def root():
     return {"message": "CCP API is running"}

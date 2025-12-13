@@ -20,7 +20,10 @@ class CCPSearchEngine:
         self.redis_client = redis.Redis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
         self.mongo_client = MongoClient(settings.mongo_uri)
         self.qdrant_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
-    
+        # Initialize embedding model for vector search
+        from sentence_transformers import SentenceTransformer
+        self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+
     def search_redis(self, query: str, pattern: str = "*") -> List[Dict]:
         """Search Redis keys matching pattern."""
         try:
@@ -39,65 +42,79 @@ class CCPSearchEngine:
             return [{"source": "redis", "error": str(e)}]
     
     def search_mongodb(self, query: str, collection: str = "ccp_db", limit: int = 10) -> List[Dict]:
-        """Search MongoDB collections with text search."""
+        """Search MongoDB collections with text search (requires text index) or regex fallback."""
         try:
             db = self.mongo_client["ccp_db"]
-            
-            # Try text search first
             results = []
+            
             for coll_name in db.list_collection_names():
                 if collection != "ccp_db" and coll_name != collection:
                     continue
                 
                 coll = db[coll_name]
-                # Simple field search (in production, use text indexes)
-                docs = list(coll.find(
-                    {"$or": [
-                        {"name": {"$regex": query, "$options": "i"}},
-                        {"description": {"$regex": query, "$options": "i"}},
-                        {"content": {"$regex": query, "$options": "i"}}
-                    ]},
-                    {"_id": 0}
-                ).limit(limit))
                 
-                for doc in docs:
-                    results.append({
-                        "source": "mongodb",
-                        "collection": coll_name,
-                        "document": doc,
-                        "score": 0.8  # Relevance score
-                    })
+                # specific exposed collections (Data-Clusters, Function-store)
+                # User asked to always expose them.
+                
+                # Hybrid: Try text search first (if index exists)
+                try:
+                    docs = list(coll.find(
+                        {"$text": {"$search": query}},
+                        {"score": {"$meta": "textScore"}}
+                    ).sort([("score", {"$meta": "textScore"})]).limit(limit))
+                    
+                    for doc in docs:
+                        results.append({
+                            "source": "mongodb",
+                            "collection": coll_name,
+                            "document": doc,
+                            "score": doc.get('score', 0.5) / 10.0 # Normalize roughly
+                        })
+                except Exception:
+                    # Fallback to regex if no text index
+                     docs = list(coll.find(
+                        {"$or": [
+                            {"name": {"$regex": query, "$options": "i"}},
+                            {"description": {"$regex": query, "$options": "i"}},
+                            {"content": {"$regex": query, "$options": "i"}}
+                        ]},
+                        {"_id": 0}
+                    ).limit(limit))
+                     for doc in docs:
+                        results.append({
+                            "source": "mongodb",
+                            "collection": coll_name,
+                            "document": doc,
+                            "score": 0.5
+                        })
             
             return results
         except Exception as e:
             return [{"source": "mongodb", "error": str(e)}]
     
     def search_qdrant(self, query: str, collection: str = "function_registry", limit: int = 10) -> List[Dict]:
-        """Search Qdrant vector store."""
+        """Search Qdrant vector store using real embeddings."""
         try:
-            # This would use embeddings in production
-            # For now, we'll use payload filtering
-            points, _ = self.qdrant_client.scroll(
+            vector = self.encoder.encode(query).tolist()
+            
+            points = self.qdrant_client.search(
                 collection_name=collection,
-                limit=limit,
-                with_payload=True,
-                with_vectors=False
+                query_vector=vector,
+                limit=limit
             )
             
             results = []
             for point in points:
-                payload = point.payload
-                # Simple relevance check
-                if query.lower() in str(payload).lower():
-                    results.append({
-                        "source": "qdrant",
-                        "collection": collection,
-                        "payload": payload,
-                        "score": point.score if hasattr(point, 'score') else 0.9
-                    })
+                results.append({
+                    "source": "qdrant",
+                    "collection": collection,
+                    "payload": point.payload,
+                    "score": point.score
+                })
             
             return results
         except Exception as e:
+            # Check if collection exists, if not maybe return empty or error
             return [{"source": "qdrant", "error": str(e)}]
     
     def search_web(self, query: str, num_results: int = 5) -> List[Dict]:
@@ -132,21 +149,27 @@ class CCPSearchEngine:
             return [{"source": "web", "error": str(e)}]
     
     def aggregate_results(self, all_results: List[Dict], max_results: int = 20) -> List[Dict]:
-        """Aggregate and rank results from multiple sources."""
+        """Aggregate and rank results from multiple sources (Hybrid Fusion)."""
         # Remove error results
         valid_results = [r for r in all_results if "error" not in r]
         
-        # Sort by score (descending)
-        sorted_results = sorted(valid_results, key=lambda x: x.get("score", 0), reverse=True)
+        # Reciprocal Rank Fusion implementation or simple score sorting
+        # Since scores are different scales (Qdrant: cosine 0-1, Mongo: textScore arbitrary), 
+        # we should normalize or just rank by source priority if naive.
+        # But RRF is better.
         
-        # Deduplicate based on content similarity (simple version)
-        unique_results = []
+        # Simple Deduplication
         seen_content = set()
+        unique_results = []
         
-        for result in sorted_results:
-            content_key = str(result.get("document", result.get("payload", result.get("title", ""))))[:100]
-            if content_key not in seen_content:
-                seen_content.add(content_key)
+        # Sort by raw score first to get best candidates
+        sorted_raw = sorted(valid_results, key=lambda x: float(x.get("score", 0)), reverse=True)
+        
+        for result in sorted_raw:
+            # content key based on payload/doc
+            content = str(result.get("document") or result.get("payload") or result.get("snippet"))
+            if content not in seen_content:
+                seen_content.add(content)
                 unique_results.append(result)
         
         return unique_results[:max_results]

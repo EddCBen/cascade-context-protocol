@@ -1,10 +1,10 @@
 """
 Domain scraper - Autonomous web scraping for domain-specific content.
-Enhanced for 200+ samples with parallel scraping and retry logic.
+Enhanced for 200+ samples with parallel scraping, retry logic, and MongoDB integration.
 """
 import requests
 from bs4 import BeautifulSoup
-from typing import List, Dict
+from typing import List, Dict, Optional
 import json
 import logging
 import asyncio
@@ -12,16 +12,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from src.ccp.distillation.models import ScrapedData
 from src.ccp.neural.training_config import ScraperConfig
+from src.ccp.storage.mongo import MongoStorage
 
 logger = logging.getLogger(__name__)
 
 
 class DomainScraper:
-    """Scrapes web sources for domain-specific content with parallel execution."""
+    """Scrapes web sources for domain-specific content with parallel execution and MongoDB persistence."""
     
-    def __init__(self, config: ScraperConfig = None):
+    def __init__(self, config: ScraperConfig = None, mongo_storage: Optional[MongoStorage] = None):
         self.config = config or ScraperConfig()
         self.headers = {'User-Agent': 'Mozilla/5.0 (compatible; CCPBot/1.0)'}
+        self.mongo = mongo_storage  # Optional MongoDB storage
     
     async def scrape_domain(self, domain: str, subdomains: List[str], max_samples: int = None) -> List[ScrapedData]:
         """

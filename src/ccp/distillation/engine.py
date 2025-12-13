@@ -98,6 +98,13 @@ class DistillationEngine:
         collection_name = f"{request.domain}_training_data"
         await self.store_datasets(datasets, collection_name)
         
+        # 4.5 [NEW] Extract and Index Structured Knowledge
+        logger.info(f"[DistillationEngine] Extracting structured knowledge for {request.domain}...")
+        try:
+            await self.extract_and_index_knowledge(request.domain, scraped_data)
+        except Exception as e:
+            logger.error(f"[DistillationEngine] Failed to extract structured knowledge: {e}")
+
         # 5. Create semantic clusters and train neural networks
         logger.info(f"[DistillationEngine] Creating semantic clusters and training neural networks for {request.domain}...")
         
@@ -108,10 +115,12 @@ class DistillationEngine:
             from src.ccp.neural.trainer_loop import NeuralTrainer
             from src.ccp.core.embedding_service import EmbeddingService
             from qdrant_client import QdrantClient
+            from qdrant_client.models import PointStruct
             from src.ccp.core.settings import settings
             import numpy as np
             import torch
             from torch.utils.data import TensorDataset, DataLoader
+            import hashlib
             
             # Initialize services
             embedding_service = EmbeddingService()
@@ -227,6 +236,92 @@ class DistillationEngine:
         
         logger.info(f"[DistillationEngine] Completed distillation for {request.domain}")
         return profile
+    
+    async def extract_and_index_knowledge(self, domain: str, scraped_data: List):
+        """
+        Extract structured knowledge (concepts, definitions) from scraped data and index in Qdrant.
+        This provides holistic domain coverage beyond raw chunks.
+        """
+        if not self.llm_service:
+            logger.warning("[DistillationEngine] No LLM service available for knowledge extraction")
+            return
+
+        from src.ccp.core.embedding_service import EmbeddingService
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import PointStruct
+        from src.ccp.core.settings import settings
+        import hashlib
+        import uuid
+        
+        embedding_service = EmbeddingService()
+        qdrant_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        
+        # Prepare context from scraped data (titles and snippets)
+        context_text = "\n".join([f"- {d.title}: {d.content[:200]}" for d in scraped_data[:50]])
+        
+        prompt = f"""Extract the core structured knowledge for the domain "{domain}".
+Based on the following content samples:
+{context_text[:3000]}
+
+Identify 10-15 key concepts, definitions, or fundamental facts.
+Return ONLY a valid JSON list of objects.
+Format:
+[
+  {{
+    "concept": "Name of concept",
+    "definition": "Clear, concise definition",
+    "category": "Core Concept/Tool/Methodology/History"
+  }}
+]
+"""
+        try:
+            response = self.llm_service.generate_content(prompt, max_tokens=1500, temperature=0.2)
+            # Basic cleanup for JSON parsing
+            import json
+            import re
+            
+            # Find JSON/list structure
+            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                concepts = json.loads(json_str)
+                
+                logger.info(f"[DistillationEngine] Extracted {len(concepts)} structured concepts for {domain}")
+                
+                points = []
+                for concept in concepts:
+                    # Create rich text representation for embedding
+                    text_rep = f"Domain: {domain}\nConcept: {concept['concept']}\nDefinition: {concept['definition']}\nCategory: {concept['category']}"
+                    
+                    # Generate embedding
+                    vector = embedding_service.embed(text_rep)
+                    
+                    # Generate deterministic UUID
+                    concept_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{domain}_{concept['concept']}"))
+                    
+                    points.append(PointStruct(
+                        id=concept_id,
+                        vector=vector,
+                        payload={
+                            "domain": domain,
+                            "type": "structured_knowledge",  # Special tag
+                            "concept": concept['concept'],
+                            "definition": concept['definition'],
+                            "category": concept['category'],
+                            "content_preview": text_rep,
+                            "source": "llm_synthesis"
+                        }
+                    ))
+                
+                if points:
+                    qdrant_client.upsert(
+                        collection_name="domain_contexts",  # Store in same collection but distinguishable by type
+                        points=points
+                    )
+                    logger.info(f"[DistillationEngine] ✅ Indexed {len(points)} structured knowledge concepts in Qdrant")
+                    
+        except Exception as e:
+            logger.error(f"[DistillationEngine] Error in knowledge extraction: {e}")
     
     async def decompose_domain(self, domain: str, task_description: Optional[str]) -> List[str]:
         """

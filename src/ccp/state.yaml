@@ -1,0 +1,12 @@
+neuro_transmitter:
+  # The external powerful model (Gemini)
+  external_axon:
+    provider: google
+    model_id: ${GOOGLE_MODEL_ID}
+    api_key: ${GOOGLE_API_KEY}
+
+  # The local fast/cheap model (Qwen)
+  local_axon:
+    provider: llama_cpp
+    base_url: http://local-llm:8081/v1
+    model: Qwen/Qwen2.5-1.5B-Instruct-GGUF

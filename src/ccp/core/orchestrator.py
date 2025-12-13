@@ -5,7 +5,6 @@ import torch
 from typing import Optional, AsyncGenerator, List, Any
 from src.ccp.models.context import ContextBlock, ExecutionGraph, ExecutionNode, ExecutionEdge, NodeState
 from src.ccp.storage.mongo import MongoStorage
-from src.ccp.neural.models import VectorNormalizer, SoftmaxRouter
 from src.ccp.core.settings import settings
 from qdrant_client import QdrantClient
 
@@ -29,15 +28,8 @@ class Orchestrator:
         self.llm_service = llm_service
         self.mongo_storage = MongoStorage()
 
-        # Neural Components
-        self.device = torch.device("cpu") # Keep simple for now
-        self.normalizer = VectorNormalizer(input_dim=settings.embedding_dim).to(self.device)
-        self.router = SoftmaxRouter(input_dim=settings.embedding_dim, num_tools=20).to(self.device)
-        
-        # Load weights if available (Mock/Init for now, normally would load from disk)
-        # self.normalizer.load_weights("default")
-        
         # Retrieval Components
+
         try:
              self.qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
         except:
@@ -89,14 +81,9 @@ class Orchestrator:
         if not raw_embedding:
             return []
         
-        # 2. Normalize via Neural Net
-        with torch.no_grad():
-            tensor_emb = torch.tensor(raw_embedding, device=self.device).unsqueeze(0)
-            normalized_emb = self.normalizer(tensor_emb).squeeze(0).tolist()
-            
-            # (Optional) Logits from router for future filtering
-            # logits = self.router(tensor_emb)
-            # logger.info(f"Router Logits: {logits}")
+        # 2. Use Raw Embedding directly (Standard Vector Search)
+        normalized_emb = raw_embedding
+
 
         # 3. Search Qdrant
         try:
